@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Photo List</title>
+
+</head>
+<body>
+    <h1>Photo Gallery</h1>
+    <a href="{% url 'upload_photo' %}">Upload a new photo</a>
+    <div>
+        {% for photo in photos %}
+            <div>
+                <h2>{{ photo.title }}</h2>
+                <img src="{{ photo.image.url }}" alt="{{ photo.title }}" width="300">
+                <p>{{ photo.description }}</p>
+            </div>
+            <form action="{% url 'up' photo.id %}" method="post">
+                {% csrf_token %}
+                <button type="submit">Up</button>
+            </form>
+            <form action="{% url 'down' photo.id %}" method="post">
+                {% csrf_token %}
+                <button type="submit">Down</button>
+            </form>
+            <form action="{% url 'top' photo.id %}" method="post">
+                {% csrf_token %}
+                <button type="submit">top</button>
+            </form>
+            <form action="{% url 'bottom' photo.id %}" method="post">
+                {% csrf_token %}
+                <button type="submit">Bottom</button>
+            </form>
+        {% endfor %}
+    </div>
+</body>
+</html>
