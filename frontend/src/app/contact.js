@@ -1,6 +1,6 @@
 const Contact = () => {
     return (
-        <div className="flex mt-40 items-center justify-center overflow-hidden">
+        <div className="flex mt-20 md:mt-40 items-center justify-center overflow-hidden">
             <div className="grid grid-cols-1 md:grid-cols-2 justify-items-center my-auto gap-32 pb-20 font-mono font-thin">
                 {/* Instagram */}
                 <div className="flex items-end space-x-2">
