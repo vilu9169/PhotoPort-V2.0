@@ -29,16 +29,9 @@ export default function Home() {
         </button>
       </nav>
     <div className=" relative overflow-hidden min-h-[400px]">
-      {page === 0 && <motion.div
-            key="gallery"
-            variants={pageVariants}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            transition={{ duration: 0.5 }}
-          >
+      {page === 0 && 
             <Gallery />
-          </motion.div>}
+            }
       {page === 1 && <motion.div
             key="about"
             variants={pageVariants}
