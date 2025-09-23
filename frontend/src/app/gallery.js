@@ -8,8 +8,8 @@ const Gallery = () => {
   const [loading, setLoading] = useState(true);
   const [selectedPhoto, setSelectedPhoto] = useState(null);
 
-
-
+  const API_url = process.env.NEXT_PUBLIC_API_URL;
+  
   const pageVariants = {
     initial: { opacity: 0, x: 50 },
     animate: { opacity: 1, x: 0 },
@@ -17,7 +17,7 @@ const Gallery = () => {
   };
   useEffect(() => {
     // Fetch images from API
-    fetch("http://127.0.0.1:8000/api/photos/")
+    fetch(API_url + "/api/photos/")
       .then((response) => response.json())
       .then((data) => {
         setImages(data);
@@ -34,7 +34,7 @@ const Gallery = () => {
       const ratios = await Promise.all(
         images.map((image) => {
           const img = new Image();
-          img.src = `http://127.0.0.1:8000${image.image}`;
+          img.src = API_url + image.image;
           return new Promise((resolve) => {
             img.onload = () => {
               resolve(img.width / img.height);
@@ -79,7 +79,7 @@ const Gallery = () => {
               </button>
             <div className=" mx-9 mt-5 grid grid-cols-1 md:grid-cols-2">
               <img
-                src={`http://127.0.0.1:8000${selectedPhoto.image}`}
+                src={API_url + selectedPhoto.image}
                 alt={selectedPhoto.title}
                 className=" max-h-[600px] mb-4"
               />
@@ -129,7 +129,7 @@ const Gallery = () => {
                   }`}
                 >
                   <img
-                    src={`http://127.0.0.1:8000${image.image}`}
+                    src={API_url + image.image}
                     alt={image.title}
                     className="w-full object-cover h-full transition-transform duration-300 ease-in-out"
                   />

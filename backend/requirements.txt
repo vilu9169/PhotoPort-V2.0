@@ -1,0 +1,10 @@
+Django>=5.0
+gunicorn
+whitenoise
+psycopg2-binary        # Postgres driver
+django-cors-headers    # allow your Pages/frontend to call the API
+python-dotenv          # optional, for local dev
+gunicorn 
+whitenoise 
+django-cors-headers 
+dj-database-url
