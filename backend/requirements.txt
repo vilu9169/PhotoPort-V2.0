@@ -8,3 +8,5 @@ gunicorn
 whitenoise 
 django-cors-headers 
 dj-database-url
+djangorestframework>=3.14.0
+djangorestframework-simplejwt
