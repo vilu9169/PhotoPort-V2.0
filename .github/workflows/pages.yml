@@ -1,46 +1,35 @@
 name: Deploy Frontend to GitHub Pages
-
 on:
   push:
     branches: [ main ]
-
 permissions:
   contents: read
   pages: write
   id-token: write
-
 concurrency:
   group: pages
   cancel-in-progress: true
-
 jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      REPO_NAME: ${{ github.event.repository.name }}   # e.g. "PhotoPort-V2.0"
+      REPO_NAME: ${{ github.event.repository.name }}
     defaults:
       run:
-        working-directory: frontend                    # <-- build only /frontend
+        working-directory: frontend
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-
       - run: npm ci
-      - run: npm run export                            # next build + export (make sure script exists)
-
-      - name: Add .nojekyll (required for _next assets)
-        run: mkdir -p out && touch out/.nojekyll
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+      - run: npm run build                   # ✅ build only; output:export -> writes to ./out
+      - run: mkdir -p out && touch out/.nojekyll
+      - uses: actions/upload-pages-artifact@v3
         with:
           path: frontend/out
-
   deploy:
     runs-on: ubuntu-latest
     needs: build
