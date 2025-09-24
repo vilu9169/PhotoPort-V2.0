@@ -1,6 +1,6 @@
 // frontend/next.config.mjs
 const isProd = process.env.NODE_ENV === "production";
-const repoName = "photography"; // <-- YOUR repo name
+const repoName = "PhotoPort-V2.0";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
