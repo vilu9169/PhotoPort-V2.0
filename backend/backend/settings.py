@@ -90,44 +90,48 @@ else:
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
-# Django 5 way (replaces STATICFILES_STORAGE)
-STORAGES = {
-    "staticfiles": {
-        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
-    },
-    # default file storage (media) is set below depending on env
-}
+USE_S3 = bool(os.getenv("AWS_STORAGE_BUCKET_NAME"))
 
-# ----- Media storage -----
-# If you configure S3/R2 via env, use django-storages; otherwise use local disk.
-AWS_BUCKET = os.getenv("AWS_STORAGE_BUCKET_NAME")
-if AWS_BUCKET:
-    # Requires: pip install django-storages boto3
-    INSTALLED_APPS += ["storages"]
-    DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
+if USE_S3:
+    # ---- S3 for media, WhiteNoise for static ----
+    STORAGES = {
+        "default": {  # media files (uploads)
+            "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+        },
+        "staticfiles": {  # collected static files
+            "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+        },
+    }
+
+    AWS_STORAGE_BUCKET_NAME = os.getenv("AWS_STORAGE_BUCKET_NAME")
     AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
     AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
     AWS_S3_REGION_NAME = os.getenv("AWS_S3_REGION_NAME", "eu-north-1")
     AWS_S3_SIGNATURE_VERSION = "s3v4"
-    AWS_S3_ENDPOINT_URL = os.getenv("AWS_S3_ENDPOINT_URL")  # for Cloudflare R2
+    AWS_S3_ENDPOINT_URL = os.getenv("AWS_S3_ENDPOINT_URL")  # leave empty for AWS S3
     AWS_DEFAULT_ACL = None
     AWS_S3_OBJECT_PARAMETERS = {"CacheControl": "max-age=31536000, public"}
-    AWS_QUERYSTRING_AUTH = False  # public URLs
-    AWS_S3_CUSTOM_DOMAIN = os.getenv("AWS_S3_CUSTOM_DOMAIN")  # e.g. cdn.yourdomain.com
+    AWS_QUERYSTRING_AUTH = False
+    AWS_S3_CUSTOM_DOMAIN = os.getenv("AWS_S3_CUSTOM_DOMAIN")  # e.g. cdn.example.com
 
     if AWS_S3_CUSTOM_DOMAIN:
         MEDIA_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/"
+    elif AWS_S3_ENDPOINT_URL:
+        MEDIA_URL = f"{AWS_S3_ENDPOINT_URL.rstrip('/')}/{AWS_STORAGE_BUCKET_NAME}/"
     else:
-        # fall back to provider URL
-        if AWS_S3_ENDPOINT_URL:
-            # R2-style public URL often uses a custom domain; adjust as needed
-            MEDIA_URL = f"{AWS_S3_ENDPOINT_URL.rstrip('/')}/{AWS_BUCKET}/"
-        else:
-            MEDIA_URL = f"https://{AWS_BUCKET}.s3.amazonaws.com/"
-else:
-    MEDIA_URL = "/media/"
-    MEDIA_ROOT = BASE_DIR / "media"  # For Render disk or local dev
+        MEDIA_URL = f"https://{AWS_STORAGE_BUCKET_NAME}.s3.{AWS_S3_REGION_NAME}.amazonaws.com/"
 
+else:
+    # ---- Local disk for media (dev) + WhiteNoise for static ----
+    STORAGES = {
+        "default": {  # media files (uploads)
+            "BACKEND": "django.core.files.storage.FileSystemStorage",
+        },
+        "staticfiles": {
+            "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+        },
+    }
+    MEDIA_URL = "/media/"
 # ---------------------------------------------------------------------
 # CORS (set your frontend origins)
 # ---------------------------------------------------------------------
