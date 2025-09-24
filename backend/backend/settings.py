@@ -14,19 +14,16 @@ DEBUG = os.getenv("DEBUG", "0") == "1"
 # Render external hostname (auto-provided at runtime)
 RENDER_HOST = os.getenv("RENDER_EXTERNAL_HOSTNAME", "").strip()
 
-# Hosts / CSRF
 ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
 if RENDER_HOST:
     ALLOWED_HOSTS.append(RENDER_HOST)
-
 # If you add a custom domain later, add it here or via env:
 # ALLOWED_HOSTS += ["api.yourdomain.com"]
 
 CSRF_TRUSTED_ORIGINS = []
 if RENDER_HOST:
     CSRF_TRUSTED_ORIGINS.append(f"https://{RENDER_HOST}")
-# If you add a custom domain:
-# CSRF_TRUSTED_ORIGINS.append("https://api.yourdomain.com")
+# CSRF_TRUSTED_ORIGINS += ["https://api.yourdomain.com"]
 
 # ---------------------------------------------------------------------
 # Apps / Middleware
@@ -53,10 +50,10 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = "backend.urls"   # change if your project module differs
 
-TEMPLATES = [  # REQUIRED for admin (fixes admin.E403)
+TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [BASE_DIR / "templates"],   # optional folder for your templates
+        "DIRS": [BASE_DIR / "templates"],   # optional
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -92,11 +89,44 @@ else:
 # ---------------------------------------------------------------------
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
-STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
-MEDIA_URL = "/media/"
-MEDIA_ROOT = BASE_DIR / "media"
-# NOTE: For persistent uploads in production, use S3/R2 + django-storages.
+# Django 5 way (replaces STATICFILES_STORAGE)
+STORAGES = {
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+    # default file storage (media) is set below depending on env
+}
+
+# ----- Media storage -----
+# If you configure S3/R2 via env, use django-storages; otherwise use local disk.
+AWS_BUCKET = os.getenv("AWS_STORAGE_BUCKET_NAME")
+if AWS_BUCKET:
+    # Requires: pip install django-storages boto3
+    INSTALLED_APPS += ["storages"]
+    DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
+    AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+    AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+    AWS_S3_REGION_NAME = os.getenv("AWS_S3_REGION_NAME", "eu-north-1")
+    AWS_S3_SIGNATURE_VERSION = "s3v4"
+    AWS_S3_ENDPOINT_URL = os.getenv("AWS_S3_ENDPOINT_URL")  # for Cloudflare R2
+    AWS_DEFAULT_ACL = None
+    AWS_S3_OBJECT_PARAMETERS = {"CacheControl": "max-age=31536000, public"}
+    AWS_QUERYSTRING_AUTH = False  # public URLs
+    AWS_S3_CUSTOM_DOMAIN = os.getenv("AWS_S3_CUSTOM_DOMAIN")  # e.g. cdn.yourdomain.com
+
+    if AWS_S3_CUSTOM_DOMAIN:
+        MEDIA_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/"
+    else:
+        # fall back to provider URL
+        if AWS_S3_ENDPOINT_URL:
+            # R2-style public URL often uses a custom domain; adjust as needed
+            MEDIA_URL = f"{AWS_S3_ENDPOINT_URL.rstrip('/')}/{AWS_BUCKET}/"
+        else:
+            MEDIA_URL = f"https://{AWS_BUCKET}.s3.amazonaws.com/"
+else:
+    MEDIA_URL = "/media/"
+    MEDIA_ROOT = BASE_DIR / "media"  # For Render disk or local dev
 
 # ---------------------------------------------------------------------
 # CORS (set your frontend origins)
@@ -110,8 +140,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://192.168.0.36:3000",
     *(_frontend_origins or []),
 ]
-# If you need cookies/auth across domains:
-# CORS_ALLOW_CREDENTIALS = True
+# CORS_ALLOW_CREDENTIALS = True  # enable only if you need cookies/auth
 
 # ---------------------------------------------------------------------
 # Internationalization / Defaults
@@ -119,7 +148,6 @@ CORS_ALLOWED_ORIGINS = [
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"
 USE_I18N = True
-USE_L10N = True
 USE_TZ = True
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
