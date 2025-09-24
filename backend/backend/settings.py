@@ -34,7 +34,6 @@ INSTALLED_APPS = [
     "portfolio",
     "rest_framework",
     "corsheaders",
-    "storages",
 ]
 
 MIDDLEWARE = [
