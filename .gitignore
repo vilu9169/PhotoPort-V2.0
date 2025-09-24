@@ -3,3 +3,8 @@
 .env
 *.env
 backend/backend/.env
+
+# env files
+.env
+*.env
+backend/backend/.env
