@@ -37,7 +37,7 @@ const Contact = () => {
                         </svg>
                     </span>
                     <span className="text-base align-baseline">
-                        <a href="https://github.com/Viklund96" target="_blank">Viklund96</a>
+                        <a href="https://github.com/vilu9169" target="_blank">Viklund96</a>
                     </span>
                 </div>
                     <div className="flex items-end space-x-2">
