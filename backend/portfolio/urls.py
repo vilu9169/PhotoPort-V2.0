@@ -13,6 +13,8 @@ urlpatterns = [
     path('top_order/<int:id>/', staff_member_required(views.top_order), name='top'),
     path('bottom_order/<int:id>/', staff_member_required(views.bottom_order), name='bottom'),
     path('delete/<int:id>/', staff_member_required(views.delete_photo), name='delete_photo'),
+    
+    path("folder/<slug:slug>/", views.folder_detail, name="folder_detail"),
 
     path('api/photos/', views.PhotoList.as_view(), name='photo_list_api'),
 ]
