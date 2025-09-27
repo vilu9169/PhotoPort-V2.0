@@ -1,44 +1,41 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Photo List</title>
-
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>{% if active_folder %}{{ active_folder.title }} • {% endif %}Photo Gallery</title>
 </head>
 <body>
-    <h1>Photo Gallery</h1>
+  <h1>{% if active_folder %}{{ active_folder.title }}{% else %}Photo Gallery{% endif %}</h1>
+
+  {% if request.user.is_staff %}
     <a href="{% url 'upload_photo' %}">Upload a new photo</a>
-    <div>
-        {% for photo in photos %}
-            <div>
-                <h2>{{ photo.title }}</h2>
-                <img src="{{ photo.image.url }}" alt="{{ photo.title }}" width="300">
-                <p>{{ photo.description }}</p>
-            </div>
-            <form action="{% url 'up' photo.id %}" method="post">
-                {% csrf_token %}
-                <button type="submit">Up</button>
-            </form>
-            <form action="{% url 'down' photo.id %}" method="post">
-                {% csrf_token %}
-                <button type="submit">Down</button>
-            </form>
-            <form action="{% url 'top' photo.id %}" method="post">
-                {% csrf_token %}
-                <button type="submit">top</button>
-            </form>
-            <form action="{% url 'bottom' photo.id %}" method="post">
-                {% csrf_token %}
-                <button type="submit">Bottom</button>
-            </form>
-            <form action="{% url 'delete_photo' photo.id %}" method="post" style="display:inline;">
-                {% csrf_token %}
-                <button type="submit" onclick="return confirm('Delete this photo? This cannot be undone.');">
-                  Delete
-                </button>
-            </form>
-        {% endfor %}
-    </div>
+  {% endif %}
+
+  <div>
+    {% for photo in photos %}
+      <div>
+        <h2>{{ photo.title }}</h2>
+        {% if photo.image %}
+          <img src="{{ photo.image.url }}" alt="{{ photo.title }}" width="300">
+        {% endif %}
+        <p>{{ photo.description }}</p>
+        {% if photo.folder %}<small>Folder: {{ photo.folder.title }}</small>{% endif %}
+      </div>
+
+      {% if request.user.is_staff %}
+        <form action="{% url 'up' photo.id %}" method="post" style="display:inline">{% csrf_token %}<button type="submit">Up</button></form>
+        <form action="{% url 'down' photo.id %}" method="post" style="display:inline">{% csrf_token %}<button type="submit">Down</button></form>
+        <form action="{% url 'top' photo.id %}" method="post" style="display:inline">{% csrf_token %}<button type="submit">Top</button></form>
+        <form action="{% url 'bottom' photo.id %}" method="post" style="display:inline">{% csrf_token %}<button type="submit">Bottom</button></form>
+        <form action="{% url 'delete_photo' photo.id %}" method="post" style="display:inline">
+          {% csrf_token %}
+          <button type="submit" onclick="return confirm('Delete this photo? This cannot be undone.');">Delete</button>
+        </form>
+      {% endif %}
+    {% empty %}
+      <p>No photos yet.</p>
+    {% endfor %}
+  </div>
 </body>
 </html>
