@@ -4,7 +4,7 @@ const About = () => {
         <div className="flex flex-col md:flex-row items-center md:items-start md:space-x-8 mt-8 pb-8 max-w-3xl">
           {/* Profile picture */}
           <img
-            src="/ViktorLundin.jpg"
+            src="https://vilu9169.github.io/PhotoPort-V2.0/ViktorLundin.jpg"
             alt="Viktor Lundin"
             className="rounded-full w-40 h-40 object-cover shadow-lg"
           />
