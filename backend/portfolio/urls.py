@@ -5,7 +5,7 @@ from . import views
 from django.contrib.admin.views.decorators import staff_member_required
 
 urlpatterns = [
-    path('', views.photo_list, name='photo_list'),
+    path('', staff_member_required(views.photo_list), name='photo_list'),
 
     path('upload/', staff_member_required(views.upload_photo), name='upload_photo'),
     path('up_order/<int:id>/', staff_member_required(views.up_order), name='up'),
@@ -17,5 +17,6 @@ urlpatterns = [
 ]
 
 # Only serve local files if DEBUG=True
-if settings.DEBUG:
+
+if settings.DEBUG and settings.MEDIA_URL.startswith("/"):
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
