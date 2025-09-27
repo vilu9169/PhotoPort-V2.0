@@ -1,35 +1,54 @@
 name: Deploy Frontend to GitHub Pages
+
 on:
   push:
     branches: [ main ]
+
 permissions:
   contents: read
   pages: write
   id-token: write
+
 concurrency:
   group: pages
   cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Bake env into the build
     env:
-      REPO_NAME: ${{ github.event.repository.name }}
+      NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL }}          # set in repo Settings → Actions → Variables
+      NEXT_PUBLIC_REPO_NAME: ${{ github.event.repository.name }}     # for basePath/assetPrefix if you use it
     defaults:
       run:
         working-directory: frontend
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - run: npm ci
-      - run: npm run build                   # ✅ build only; output:export -> writes to ./out
-      - run: mkdir -p out && touch out/.nojekyll
-      - uses: actions/upload-pages-artifact@v3
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Build (Next.js static export)
+        run: npm run build   # Next 15 with output: "export" writes to ./out
+
+      - name: Add .nojekyll
+        run: mkdir -p out && touch out/.nojekyll
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
         with:
           path: frontend/out
+
   deploy:
     runs-on: ubuntu-latest
     needs: build
