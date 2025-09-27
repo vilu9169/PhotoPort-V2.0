@@ -5,7 +5,7 @@ from . import views
 from django.contrib.admin.views.decorators import staff_member_required
 
 urlpatterns = [
-    path('', staff_member_required(views.photo_list), name='photo_list'),
+    path('', views.photo_list, name='photo_list'),
 
     path('upload/', staff_member_required(views.upload_photo), name='upload_photo'),
     path('up_order/<int:id>/', staff_member_required(views.up_order), name='up'),
@@ -13,7 +13,7 @@ urlpatterns = [
     path('top_order/<int:id>/', staff_member_required(views.top_order), name='top'),
     path('bottom_order/<int:id>/', staff_member_required(views.bottom_order), name='bottom'),
 
-    path('api/photos/', staff_member_required(views.PhotoList.as_view()), name='photo_list_api'),
+    path('api/photos/', views.PhotoList.as_view(), name='photo_list_api'),
 ]
 
 # Only serve local files if DEBUG=True
