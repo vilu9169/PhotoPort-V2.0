@@ -7,12 +7,21 @@ const API_URL =
 
 const isAbsoluteUrl = (u) => /^https?:\/\//i.test(u);
 
-const getSrc = (item) => {
-  // your API may return either `image_url` (recommended) or `image`
-  const raw = (item && (item.image_url || item.image)) || "";
+const buildUrl = (raw) => {
   if (!raw) return "";
   return isAbsoluteUrl(raw) ? raw : `${API_URL}/${raw.replace(/^\//, "")}`;
 };
+
+// Prefer thumbnail in grid
+export const getThumbSrc = (item) =>
+  buildUrl(item?.thumbnail_url || item?.image_url || item?.image);
+
+// Prefer preview (or fallback to original) in detail view
+export const getDetailSrc = (item) =>
+  buildUrl(item?.preview_url || item?.image_url || item?.image);
+
+// Legacy fallback
+export const getSrc = (item) => buildUrl(item?.image_url || item?.image);
 
 const Gallery = () => {
   const [images, setImages] = useState([]);
@@ -33,7 +42,9 @@ const Gallery = () => {
     fetch(`${API_URL}/api/photos/`)
       .then((r) => r.json())
       .then((data) => {
-        setImages(data || []);
+        // support both {results: [...] } and bare arrays
+        const items = Array.isArray(data) ? data : data?.results || [];
+        setImages(items);
         setLoading(false);
       })
       .catch((err) => {
@@ -51,7 +62,8 @@ const Gallery = () => {
           (image) =>
             new Promise((resolve) => {
               const img = new Image();
-              img.src = getSrc(image);
+              // Use the THUMB to measure (lighter)
+              img.src = getThumbSrc(image);
               img.onload = () => resolve(img.width / img.height || 1);
               img.onerror = () => resolve(1); // safe fallback
             })
@@ -86,8 +98,9 @@ const Gallery = () => {
             </button>
             <div className="mx-9 mt-5 grid grid-cols-1 md:grid-cols-2">
               <img
-                src={getSrc(selectedPhoto)}
+                src={getDetailSrc(selectedPhoto)}
                 alt={selectedPhoto.title}
+                decoding="async"
                 className="max-h-[600px] mb-4"
               />
               <div>
@@ -138,10 +151,20 @@ const Gallery = () => {
                         : "col-span-1 row-span-1"
                     }`}
                   >
+                    {/* Optional blur-up */}
+                    {image.blur_data_url && (
+                      <img
+                        src={image.blur_data_url}
+                        aria-hidden
+                        className="absolute inset-0 w-full h-full object-cover blur-md scale-105"
+                      />
+                    )}
                     <img
-                      src={getSrc(image)}
+                      src={getThumbSrc(image)}
                       alt={image.title}
-                      className="w-full object-cover h-full transition-transform duration-300 ease-in-out"
+                      loading="lazy"
+                      decoding="async"
+                      className="relative w-full object-cover h-full transition-transform duration-300 ease-in-out"
                     />
                   </motion.div>
                 );
