@@ -4,7 +4,7 @@ class Migration(migrations.Migration):
 
     # depends on your last applied migration on Render; 0006 is safe if 0007 was faked
     dependencies = [
-        ("portfolio", "0006_auto_20250924_2335"),
+        ("portfolio", "0007_auto_20250924_2335"),
     ]
 
     operations = [
