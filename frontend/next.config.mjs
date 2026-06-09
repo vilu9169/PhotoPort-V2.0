@@ -6,6 +6,5 @@ export default {
   output: "export",
   images: { unoptimized: true },
   trailingSlash: true,
-  eslint: { ignoreDuringBuilds: true },   // ✅ skip lint in CI (quickest unblock)
   ...(isProd && repoName ? { basePath: `/${repoName}`, assetPrefix: `/${repoName}/` } : {}),
 };

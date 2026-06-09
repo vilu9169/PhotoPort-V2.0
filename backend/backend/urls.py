@@ -23,7 +23,7 @@ from django.urls import path, include
 from django.http import HttpResponse
 def health(request): return HttpResponse("ok")
 urlpatterns = [
-    path('admin/', admin.site.urls),
+    path(f"{settings.ADMIN_PATH}/", admin.site.urls),
     path("health/", health),
     path("", include("portfolio.urls")),
 ]

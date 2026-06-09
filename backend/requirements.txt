@@ -1,17 +1,14 @@
-Django>=5.0
+Django>=5.2.7,<5.3
 gunicorn
 whitenoise
 psycopg2-binary        # Postgres driver
 django-cors-headers    # allow your Pages/frontend to call the API
 python-dotenv          # optional, for local dev
-gunicorn 
-whitenoise 
-django-cors-headers 
 django-storages
 dj-database-url
 djangorestframework>=3.14.0
 djangorestframework-simplejwt
 Pillow
 boto3
-
-
+cloudinary>=1.44.1
+django-cloudinary-storage>=0.3.0

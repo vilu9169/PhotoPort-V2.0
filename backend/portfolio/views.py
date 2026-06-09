@@ -1,6 +1,7 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.db import models, transaction
 from django.contrib.admin.views.decorators import staff_member_required
+from django.utils.cache import patch_cache_control
 from django.views.decorators.http import require_POST
 
 from .models import Photo, Folder
@@ -10,6 +11,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.request import Request
 from rest_framework import status
+from rest_framework.permissions import AllowAny
 
 from .serializer import PhotoSerializer
 # ---------- Helpers ----------
@@ -23,6 +25,8 @@ class PhotoList(APIView):
     """
     DEFAULT_LIMIT = 50
     MAX_LIMIT = 200
+    authentication_classes = []
+    permission_classes = [AllowAny]
 
     def get_queryset(self, request: Request):
         qs = (
@@ -44,12 +48,15 @@ class PhotoList(APIView):
 
     def paginate(self, request: Request, qs):
         try:
-            limit = min(int(request.GET.get("limit", self.DEFAULT_LIMIT)), self.MAX_LIMIT)
+            limit = min(
+                max(int(request.GET.get("limit", self.DEFAULT_LIMIT)), 1),
+                self.MAX_LIMIT,
+            )
         except ValueError:
             limit = self.DEFAULT_LIMIT
 
         try:
-            offset = int(request.GET.get("offset", 0))
+            offset = max(int(request.GET.get("offset", 0)), 0)
         except ValueError:
             offset = 0
 
@@ -70,7 +77,12 @@ class PhotoList(APIView):
         qs = self.get_queryset(request)
         items, meta = self.paginate(request, qs)
         serializer = PhotoSerializer(items, many=True, context={"request": request})
-        return Response({"results": serializer.data, "meta": meta}, status=status.HTTP_200_OK)
+        response = Response(
+            {"results": serializer.data, "meta": meta},
+            status=status.HTTP_200_OK,
+        )
+        patch_cache_control(response, public=True, max_age=60)
+        return response
 
 def _normalize_order(folder: Folder | None):
     """
@@ -215,5 +227,3 @@ def delete_photo(request, id):
     photo.delete()  # S3 file removed via post_delete signal in models.py
     _normalize_order(folder)
     return redirect("photo_list")
-
-

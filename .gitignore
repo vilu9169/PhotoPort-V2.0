@@ -4,7 +4,15 @@
 *.env
 backend/backend/.env
 
-# env files
-.env
-*.env
-backend/backend/.env
+# local databases and uploaded media
+*.sqlite3
+backend/media/
+
+# Python build/runtime artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# local tooling
+.coverage
+htmlcov/

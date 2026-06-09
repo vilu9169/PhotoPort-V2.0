@@ -2,6 +2,7 @@
 from pathlib import Path
 import os
 import dj_database_url
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 load_dotenv()  # take environment variables from .env file
 
@@ -10,11 +11,19 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # ---------------------------------------------------------------------
 # Core
 # ---------------------------------------------------------------------
-SECRET_KEY = os.getenv("SECRET_KEY", "dev-unsafe")
 DEBUG = os.getenv("DEBUG", "0") == "1"
+SECRET_KEY = os.getenv("SECRET_KEY", "").strip()
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = "dev-only-unsafe-key"
+    else:
+        raise ImproperlyConfigured("SECRET_KEY must be set when DEBUG is disabled.")
 
 # Render external hostname (auto-provided at runtime)
 RENDER_HOST = os.getenv("RENDER_EXTERNAL_HOSTNAME", "").strip()
+ADMIN_PATH = os.getenv("ADMIN_PATH", "admin").strip("/")
+if not ADMIN_PATH:
+    raise ImproperlyConfigured("ADMIN_PATH cannot be empty.")
 
 ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
 if RENDER_HOST:
@@ -37,6 +46,31 @@ INSTALLED_APPS = [
     "rest_framework",
     "corsheaders",
 ]
+
+CLOUDINARY_URL = os.getenv("CLOUDINARY_URL", "").strip()
+CLOUDINARY_CLOUD_NAME = os.getenv("CLOUDINARY_CLOUD_NAME", "").strip()
+CLOUDINARY_API_KEY = os.getenv("CLOUDINARY_API_KEY", "").strip()
+CLOUDINARY_API_SECRET = os.getenv("CLOUDINARY_API_SECRET", "").strip()
+USE_CLOUDINARY = bool(CLOUDINARY_URL or CLOUDINARY_CLOUD_NAME)
+
+if USE_CLOUDINARY and not CLOUDINARY_URL:
+    missing_cloudinary_settings = [
+        name
+        for name, value in (
+            ("CLOUDINARY_CLOUD_NAME", CLOUDINARY_CLOUD_NAME),
+            ("CLOUDINARY_API_KEY", CLOUDINARY_API_KEY),
+            ("CLOUDINARY_API_SECRET", CLOUDINARY_API_SECRET),
+        )
+        if not value
+    ]
+    if missing_cloudinary_settings:
+        raise ImproperlyConfigured(
+            "Cloudinary is partially configured. Missing: "
+            + ", ".join(missing_cloudinary_settings)
+        )
+
+if USE_CLOUDINARY:
+    INSTALLED_APPS += ["cloudinary_storage", "cloudinary"]
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -70,10 +104,32 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "backend.wsgi.application"  # change if needed
 
+AUTH_PASSWORD_VALIDATORS = [
+    {
+        "NAME": (
+            "django.contrib.auth.password_validation."
+            "UserAttributeSimilarityValidator"
+        ),
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
+        "OPTIONS": {"min_length": 12},
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
+    },
+]
+
 # ---------------------------------------------------------------------
 # Database (Postgres on Render via DATABASE_URL; SQLite locally)
 # ---------------------------------------------------------------------
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+if RENDER_HOST and not DATABASE_URL:
+    raise ImproperlyConfigured("DATABASE_URL must be set on Render.")
+
 if DATABASE_URL:
     DATABASES = {
         "default": dj_database_url.parse(DATABASE_URL, conn_max_age=600, ssl_require=True)
@@ -91,10 +147,29 @@ else:
 # ---------------------------------------------------------------------
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+MEDIA_ROOT = BASE_DIR / "media"
 
 USE_S3 = bool(os.getenv("AWS_STORAGE_BUCKET_NAME"))
 
-if USE_S3:
+if USE_CLOUDINARY:
+    # ---- Cloudinary for media, WhiteNoise for static ----
+    STORAGES = {
+        "default": {
+            "BACKEND": "cloudinary_storage.storage.MediaCloudinaryStorage",
+        },
+        "staticfiles": {
+            "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+        },
+    }
+    if not CLOUDINARY_URL:
+        CLOUDINARY_STORAGE = {
+            "CLOUD_NAME": CLOUDINARY_CLOUD_NAME,
+            "API_KEY": CLOUDINARY_API_KEY,
+            "API_SECRET": CLOUDINARY_API_SECRET,
+            "SECURE": True,
+        }
+    MEDIA_URL = "/media/"
+elif USE_S3:
     # ---- S3 for media, WhiteNoise for static ----
     STORAGES = {
         "default": {  # media files (uploads)
@@ -134,6 +209,12 @@ else:
         },
     }
     MEDIA_URL = "/media/"
+
+# Reject unexpectedly large requests before application code handles them.
+DATA_UPLOAD_MAX_MEMORY_SIZE = 25 * 1024 * 1024
+DATA_UPLOAD_MAX_NUMBER_FILES = 1
+FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
+
 # ---------------------------------------------------------------------
 # CORS (set your frontend origins)
 # ---------------------------------------------------------------------
@@ -147,6 +228,17 @@ CORS_ALLOWED_ORIGINS = [
     *(_frontend_origins or []),
 ]
 # CORS_ALLOW_CREDENTIALS = True  # enable only if you need cookies/auth
+
+REST_FRAMEWORK = {
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": os.getenv("API_ANON_RATE", "120/minute"),
+        "user": os.getenv("API_USER_RATE", "600/minute"),
+    },
+}
 
 # ---------------------------------------------------------------------
 # Internationalization / Defaults
@@ -163,9 +255,11 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     SECURE_SSL_REDIRECT = True
+    SECURE_HSTS_SECONDS = int(os.getenv("SECURE_HSTS_SECONDS", "31536000"))
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = False
     SESSION_COOKIE_SECURE = True
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = "Lax"
+    SESSION_COOKIE_AGE = 60 * 60 * 8
     CSRF_COOKIE_SECURE = True
-    # Enable HSTS once your domain is stable & HTTPS-only:
-    # SECURE_HSTS_SECONDS = 3600
-    # SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    # SECURE_HSTS_PRELOAD = True
+    CSRF_COOKIE_HTTPONLY = True

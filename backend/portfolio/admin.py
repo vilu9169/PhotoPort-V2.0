@@ -1,5 +1,7 @@
 from django.contrib import admin
 from django.utils.html import format_html
+
+from .forms import PhotoForm
 from .models import Photo, Folder
 
 @admin.register(Folder)
@@ -12,6 +14,7 @@ class FolderAdmin(admin.ModelAdmin):
 
 @admin.register(Photo)
 class PhotoAdmin(admin.ModelAdmin):
+    form = PhotoForm
     list_display = ("id", "thumb", "title", "folder", "order")
     list_filter = ("folder",)
     search_fields = ("title", "description")
