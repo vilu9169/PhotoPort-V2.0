@@ -10,5 +10,5 @@ djangorestframework>=3.14.0
 djangorestframework-simplejwt
 Pillow
 boto3
-cloudinary>=1.44.1
+cloudinary>=1.44.2
 django-cloudinary-storage>=0.3.0
