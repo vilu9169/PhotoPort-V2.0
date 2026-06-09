@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Photo Labels</title>
+</head>
+<body>
+  <h1>Photo Labels</h1>
+  <ul>
+    {% for label in labels %}
+      <li>
+        <a href="{% url 'label_detail' label.slug %}">{{ label.title }}</a>
+        ({{ label.photos.count }})
+      </li>
+    {% endfor %}
+  </ul>
+  <p>Unlabeled photos: {{ unlabeled_count }}</p>
+</body>
+</html>

@@ -18,32 +18,32 @@ BLUR_W = 24           # tiny LQIP width (data URL)
 
 def photo_upload_to(instance, filename):
     """
-    Store new uploads under photos/<folder-slug>/<YYYY>/<MM>/<filename>
-    or photos/<YYYY>/<MM>/<filename> if no folder is set.
+    Store new uploads under photos/<label-slug>/<YYYY>/<MM>/<filename>
+    or photos/<YYYY>/<MM>/<filename> if no label is set.
     """
     date = timezone.now()
-    if getattr(instance, "folder_id", None) and instance.folder:
-        return f"photos/{instance.folder.slug}/{date:%Y/%m}/{filename}"
+    if getattr(instance, "label_id", None) and instance.label:
+        return f"photos/{instance.label.slug}/{date:%Y/%m}/{filename}"
     return f"photos/{date:%Y/%m}/{filename}"
 
 
 def photo_thumb_upload_to(instance, filename):
     date = timezone.now()
     name, _ = os.path.splitext(os.path.basename(filename))
-    if getattr(instance, "folder_id", None) and instance.folder:
-        return f"photos/{instance.folder.slug}/{date:%Y/%m}/thumbs/{name}.jpg"
+    if getattr(instance, "label_id", None) and instance.label:
+        return f"photos/{instance.label.slug}/{date:%Y/%m}/thumbs/{name}.jpg"
     return f"photos/{date:%Y/%m}/thumbs/{name}.jpg"
 
 
 def photo_preview_upload_to(instance, filename):
     date = timezone.now()
     name, _ = os.path.splitext(os.path.basename(filename))
-    if getattr(instance, "folder_id", None) and instance.folder:
-        return f"photos/{instance.folder.slug}/{date:%Y/%m}/previews/{name}.jpg"
+    if getattr(instance, "label_id", None) and instance.label:
+        return f"photos/{instance.label.slug}/{date:%Y/%m}/previews/{name}.jpg"
     return f"photos/{date:%Y/%m}/previews/{name}.jpg"
 
 
-class Folder(models.Model):
+class Label(models.Model):
     title = models.CharField(max_length=120, unique=True)
     slug = models.SlugField(max_length=140, unique=True)
     description = models.TextField(blank=True)
@@ -75,8 +75,8 @@ class Photo(models.Model):
     blur_data_url = models.TextField(blank=True, default="")
 
     # optional grouping
-    folder = models.ForeignKey(
-        Folder,
+    label = models.ForeignKey(
+        Label,
         null=True, blank=True,
         on_delete=models.SET_NULL,
         related_name="photos",
@@ -90,7 +90,7 @@ class Photo(models.Model):
         # default list order; we keep newest/highest order first
         ordering = ["-order", "-id"]
         indexes = [
-            models.Index(fields=["folder", "-order"]),
+            models.Index(fields=["label", "-order"]),
         ]
 
     def __str__(self):
@@ -160,14 +160,14 @@ class Photo(models.Model):
 
     def save(self, *args, **kwargs):
         """
-        - On first save, set per-folder order.
+        - On first save, set per-label order.
         - Always ensure original is saved first, then generate derivatives,
           then persist derivative fields only to avoid loops.
         """
         is_create = not self.pk
 
         if is_create:
-            qs = Photo.objects.filter(folder=self.folder)
+            qs = Photo.objects.filter(label=self.label)
             max_order = qs.aggregate(models.Max("order"))["order__max"]
             self.order = (max_order or 0) + 1
 

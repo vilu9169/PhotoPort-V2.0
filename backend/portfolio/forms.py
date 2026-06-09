@@ -12,7 +12,7 @@ ALLOWED_IMAGE_FORMATS = {"JPEG", "PNG", "WEBP"}
 class PhotoForm(forms.ModelForm):
     class Meta:
         model = Photo
-        fields = ["title", "description", "folder", "image"]
+        fields = ["title", "description", "label", "image"]
 
     def clean_image(self):
         image = self.cleaned_data["image"]

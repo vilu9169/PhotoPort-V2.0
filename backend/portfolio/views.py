@@ -4,7 +4,7 @@ from django.contrib.admin.views.decorators import staff_member_required
 from django.utils.cache import patch_cache_control
 from django.views.decorators.http import require_POST
 
-from .models import Photo, Folder
+from .models import Label, Photo
 from .forms import PhotoForm
 
 from rest_framework.views import APIView
@@ -18,9 +18,10 @@ from .serializer import PhotoSerializer
 
 class PhotoList(APIView):
     """
-    GET /api/photos/?folder=<slug>&limit=50&offset=0
+    GET /api/photos/?label=<slug>&limit=50&offset=0
 
-    - folder=<slug> filters to a folder by slug
+    - label=<slug> filters by label
+    - folder=<slug> remains a temporary query-string alias
     - limit/offset are optional (default 50/0, hard-capped)
     """
     DEFAULT_LIMIT = 50
@@ -30,19 +31,19 @@ class PhotoList(APIView):
 
     def get_queryset(self, request: Request):
         qs = (
-            Photo.objects.select_related("folder")
+            Photo.objects.select_related("label")
             .only(
                 "id", "title", "description", "category",
                 "created_at", "order",
                 "image", "thumb", "preview", "blur_data_url",
-                "folder", "folder__title", "folder__slug", "folder__order",
+                "label", "label__title", "label__slug", "label__order",
             )
             .order_by("-order", "-id")
         )
 
-        folder_slug = request.GET.get("folder")
-        if folder_slug:
-            qs = qs.filter(folder__slug=folder_slug)
+        label_slug = request.GET.get("label") or request.GET.get("folder")
+        if label_slug:
+            qs = qs.filter(label__slug=label_slug)
 
         return qs
 
@@ -84,16 +85,16 @@ class PhotoList(APIView):
         patch_cache_control(response, public=True, max_age=60)
         return response
 
-def _normalize_order(folder: Folder | None):
+def _normalize_order(label: Label | None):
     """
-    Keep contiguous ordering (n..1) inside a folder, or among ungrouped photos.
+    Keep contiguous ordering (n..1) inside a label, or among unlabeled photos.
     Uses bulk_update to avoid n queries.
     """
     with transaction.atomic():
-        if folder:
-            qs = Photo.objects.filter(folder=folder)
+        if label:
+            qs = Photo.objects.filter(label=label)
         else:
-            qs = Photo.objects.filter(folder__isnull=True)
+            qs = Photo.objects.filter(label__isnull=True)
 
         photos = list(qs.order_by("-order").only("id", "order"))
         n = len(photos)
@@ -105,35 +106,35 @@ def _normalize_order(folder: Folder | None):
 
 # ---------- Public views ----------
 
-def folder_list(request):
-    """List all folders (and show count of ungrouped photos)."""
-    folders = Folder.objects.all().order_by("-order", "-id")
-    ungrouped_count = Photo.objects.filter(folder__isnull=True).count()
+def label_list(request):
+    """List all labels and the number of unlabeled photos."""
+    labels = Label.objects.all().order_by("-order", "-id")
+    unlabeled_count = Photo.objects.filter(label__isnull=True).count()
     return render(
         request,
-        "photos/folder_list.html",
-        {"folders": folders, "ungrouped_count": ungrouped_count},
+        "photos/label_list.html",
+        {"labels": labels, "unlabeled_count": unlabeled_count},
     )
 
 
-def folder_detail(request, slug):
-    """Photos inside one folder."""
-    folder = get_object_or_404(Folder, slug=slug)
-    photos = folder.photos.all().order_by("-order", "-id")
+def label_detail(request, slug):
+    """Photos assigned to one label."""
+    label = get_object_or_404(Label, slug=slug)
+    photos = label.photos.all().order_by("-order", "-id")
     return render(
         request,
         "photos/photo_list.html",
-        {"photos": photos, "active_folder": folder},
+        {"photos": photos, "active_label": label},
     )
 
 
 def photo_list(request):
-    """All photos (across folders). If you prefer 'ungrouped only', filter here."""
+    """All photos across labels."""
     photos = Photo.objects.all().order_by("-order", "-id")
     return render(
         request,
         "photos/photo_list.html",
-        {"photos": photos, "active_folder": None},
+        {"photos": photos, "active_label": None},
     )
 
 
@@ -145,10 +146,9 @@ def upload_photo(request):
         form = PhotoForm(request.POST, request.FILES)
         if form.is_valid():
             photo = form.save()  # goes to S3 if configured
-            _normalize_order(photo.folder)
-            # Optional: redirect to that folder's page if set
-            if photo.folder:
-                return redirect("folder_detail", slug=photo.folder.slug)
+            _normalize_order(photo.label)
+            if photo.label:
+                return redirect("label_detail", slug=photo.label.slug)
             return redirect("photo_list")
     else:
         form = PhotoForm()
@@ -160,7 +160,7 @@ def upload_photo(request):
 def up_order(request, id):
     photo = get_object_or_404(Photo, id=id)
     prev_photo = (
-        Photo.objects.filter(folder=photo.folder, order__gt=photo.order)
+        Photo.objects.filter(label=photo.label, order__gt=photo.order)
         .order_by("order")
         .first()
     )
@@ -168,7 +168,7 @@ def up_order(request, id):
         photo.order, prev_photo.order = prev_photo.order, photo.order
         photo.save(update_fields=["order"])
         prev_photo.save(update_fields=["order"])
-    _normalize_order(photo.folder)
+    _normalize_order(photo.label)
     return redirect("photo_list")
 
 
@@ -177,7 +177,7 @@ def up_order(request, id):
 def down_order(request, id):
     photo = get_object_or_404(Photo, id=id)
     next_photo = (
-        Photo.objects.filter(folder=photo.folder, order__lt=photo.order)
+        Photo.objects.filter(label=photo.label, order__lt=photo.order)
         .order_by("-order")
         .first()
     )
@@ -185,7 +185,7 @@ def down_order(request, id):
         photo.order, next_photo.order = next_photo.order, photo.order
         photo.save(update_fields=["order"])
         next_photo.save(update_fields=["order"])
-    _normalize_order(photo.folder)
+    _normalize_order(photo.label)
     return redirect("photo_list")
 
 
@@ -194,13 +194,13 @@ def down_order(request, id):
 def top_order(request, id):
     photo = get_object_or_404(Photo, id=id)
     max_order = (
-        Photo.objects.filter(folder=photo.folder)
+        Photo.objects.filter(label=photo.label)
         .aggregate(models.Max("order"))["order__max"]
         or 0
     )
     photo.order = max_order + 1
     photo.save(update_fields=["order"])
-    _normalize_order(photo.folder)
+    _normalize_order(photo.label)
     return redirect("photo_list")
 
 
@@ -209,13 +209,13 @@ def top_order(request, id):
 def bottom_order(request, id):
     photo = get_object_or_404(Photo, id=id)
     min_order = (
-        Photo.objects.filter(folder=photo.folder)
+        Photo.objects.filter(label=photo.label)
         .aggregate(models.Min("order"))["order__min"]
         or 0
     )
     photo.order = min_order - 1
     photo.save(update_fields=["order"])
-    _normalize_order(photo.folder)
+    _normalize_order(photo.label)
     return redirect("photo_list")
 
 
@@ -223,7 +223,7 @@ def bottom_order(request, id):
 @require_POST
 def delete_photo(request, id):
     photo = get_object_or_404(Photo, id=id)
-    folder = photo.folder
+    label = photo.label
     photo.delete()  # S3 file removed via post_delete signal in models.py
-    _normalize_order(folder)
+    _normalize_order(label)
     return redirect("photo_list")
