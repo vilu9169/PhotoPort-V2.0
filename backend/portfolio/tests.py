@@ -1,11 +1,14 @@
 import io
+from unittest.mock import patch
 
+from django.db import OperationalError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.urls import reverse
 from PIL import Image
 
 from .forms import MAX_UPLOAD_BYTES, PhotoForm
+from .models import Folder, Photo
 
 
 def image_upload(name="photo.jpg", image_format="JPEG", size=(32, 32)):
@@ -19,6 +22,22 @@ def image_upload(name="photo.jpg", image_format="JPEG", size=(32, 32)):
 
 
 class PhotoSecurityTests(TestCase):
+    def test_health_reports_database_available(self):
+        response = self.client.get("/health/", secure=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["database"], "ok")
+
+    @patch(
+        "backend.urls.connection.cursor",
+        side_effect=OperationalError("database unavailable"),
+    )
+    def test_health_reports_database_failure(self, mocked_cursor):
+        response = self.client.get("/health/", secure=True)
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()["database"], "unavailable")
+
     def test_anonymous_user_cannot_access_upload_page(self):
         response = self.client.get(reverse("upload_photo"), secure=True)
 
@@ -36,6 +55,25 @@ class PhotoSecurityTests(TestCase):
         self.assertEqual(response.json()["meta"]["limit"], 1)
         self.assertEqual(response.json()["meta"]["offset"], 0)
         self.assertIn("public", response["Cache-Control"])
+
+    def test_api_includes_folder_metadata(self):
+        folder = Folder.objects.create(title="Japan", slug="japan", order=4)
+        photo = Photo(
+            title="Tokyo",
+            description="Night street",
+            folder=folder,
+            image="photos/japan/tokyo.jpg",
+            thumb="photos/japan/thumbs/tokyo.jpg",
+            preview="photos/japan/previews/tokyo.jpg",
+        )
+        Photo.objects.bulk_create([photo])
+
+        response = self.client.get(reverse("photo_list_api"), secure=True)
+        item = response.json()["results"][0]
+
+        self.assertEqual(item["folder_title"], "Japan")
+        self.assertEqual(item["folder_slug"], "japan")
+        self.assertEqual(item["folder_order"], 4)
 
     def test_photo_form_accepts_supported_image(self):
         form = PhotoForm(
