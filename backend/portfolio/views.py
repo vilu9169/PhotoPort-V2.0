@@ -35,7 +35,7 @@ class PhotoList(APIView):
                 "id", "title", "description", "category",
                 "created_at", "order",
                 "image", "thumb", "preview", "blur_data_url",
-                "folder",  # FK id for select_related
+                "folder", "folder__title", "folder__slug", "folder__order",
             )
             .order_by("-order", "-id")
         )

@@ -17,11 +17,27 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
+from django.db import connection
+from django.http import JsonResponse
 from portfolio import views
 # backend/urls.py
 from django.urls import path, include
-from django.http import HttpResponse
-def health(request): return HttpResponse("ok")
+
+
+def health(request):
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+    except Exception:
+        return JsonResponse(
+            {"status": "unhealthy", "database": "unavailable"},
+            status=503,
+        )
+
+    return JsonResponse({"status": "ok", "database": "ok"})
+
+
 urlpatterns = [
     path(f"{settings.ADMIN_PATH}/", admin.site.urls),
     path("health/", health),

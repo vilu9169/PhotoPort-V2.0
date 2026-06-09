@@ -1,59 +1,62 @@
 "use client";
-import Image from "next/image";
-import Gallery from "./gallery";
-import Contact from "./contact";
+
+import React, { useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+
 import About from "./about";
-import React, { useEffect, useState } from "react";
-import { motion } from "framer-motion";
+import Contact from "./contact";
+import Gallery from "./gallery";
+
+const pages = [
+  { id: "gallery", label: "Gallery" },
+  { id: "about", label: "About" },
+  { id: "contact", label: "Contact" },
+];
 
 export default function Home() {
-  const [page, setPage] = useState(0);
+  const [page, setPage] = useState("gallery");
 
-  const pageVariants = {
-    initial: { opacity: 0, x: 50 },
-    animate: { opacity: 1, x: 0 },
-    exit: { opacity: 0, x: -50 },
-  };
   return (
-    <div className=" max-w-full mx-auto dark:text-white text-center mt-10 sm:mt-20 md:mt-20 lg:mt-20">
-      <div className=" text-lg space-x-3"><a>Viktor</a><a>Lundin</a></div>
-      <nav className=" flex justify-center mt-6 space-x-8 pb-5">
-        <button onClick={() => setPage(0)} className={`text-lg dark:text-white underline-offset-8 hover:underline ${page === 0 && "underline"}`}>
-          Gallery
+    <main className="site-shell">
+      <header className="site-header">
+        <button
+          type="button"
+          className="site-mark"
+          onClick={() => setPage("gallery")}
+          aria-label="Viktor Lundin, open gallery"
+        >
+          <span>Viktor Lundin</span>
+          <small>Photography</small>
         </button>
-        <button onClick={() => setPage(1)} className={`text-lg dark:text-white underline-offset-8 hover:underline ${page === 1 && "underline"}`}>
-          About
-        </button>
-        <button onClick={() => setPage(2)} className={`text-lg dark:text-white underline-offset-8 hover:underline ${page === 2 && "underline"}`}>
-          Contact
-        </button>
-      </nav>
-    <div className=" relative overflow-hidden min-h-[400px]">
-      {page === 0 && 
-            <Gallery />
-            }
-      {page === 1 && <motion.div
-            key="about"
-            variants={pageVariants}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            transition={{ duration: 0.5 }}
-          >
-            <About />
-          </motion.div>}
-          {page === 2 && <motion.div
-            key="contact"
-            variants={pageVariants}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            transition={{ duration: 0.5 }}
-          >
-            <Contact />
-          </motion.div>}
-        
-      </div>
-    </div>
-);
+
+        <nav className="site-nav" aria-label="Main navigation">
+          {pages.map((item) => (
+            <button
+              type="button"
+              key={item.id}
+              onClick={() => setPage(item.id)}
+              className={page === item.id ? "is-active" : ""}
+              aria-current={page === item.id ? "page" : undefined}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+      </header>
+
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={page}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          transition={{ duration: 0.3, ease: "easeOut" }}
+        >
+          {page === "gallery" && <Gallery />}
+          {page === "about" && <About />}
+          {page === "contact" && <Contact />}
+        </motion.div>
+      </AnimatePresence>
+    </main>
+  );
 }

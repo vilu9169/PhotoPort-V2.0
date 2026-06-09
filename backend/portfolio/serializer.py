@@ -6,6 +6,9 @@ class PhotoSerializer(serializers.ModelSerializer):
     image_url = serializers.SerializerMethodField()
     thumbnail_url = serializers.SerializerMethodField()
     preview_url = serializers.SerializerMethodField()
+    folder_title = serializers.CharField(source="folder.title", read_only=True)
+    folder_slug = serializers.CharField(source="folder.slug", read_only=True)
+    folder_order = serializers.IntegerField(source="folder.order", read_only=True)
 
     class Meta:
         model = Photo
@@ -21,6 +24,9 @@ class PhotoSerializer(serializers.ModelSerializer):
             "preview_url",
             "blur_data_url",
             "folder",
+            "folder_title",
+            "folder_slug",
+            "folder_order",
         ]
 
     def _abs_url(self, file_field):
