@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>{% if active_folder %}{{ active_folder.title }} • {% endif %}Photo Gallery</title>
+  <title>{% if active_label %}{{ active_label.title }} • {% endif %}Photo Gallery</title>
 </head>
 <body>
-  <h1>{% if active_folder %}{{ active_folder.title }}{% else %}Photo Gallery{% endif %}</h1>
+  <h1>{% if active_label %}{{ active_label.title }}{% else %}Photo Gallery{% endif %}</h1>
 
   {% if request.user.is_staff %}
     <a href="{% url 'upload_photo' %}">Upload a new photo</a>
@@ -20,7 +20,7 @@
           <img src="{{ photo.image.url }}" alt="{{ photo.title }}" width="300">
         {% endif %}
         <p>{{ photo.description }}</p>
-        {% if photo.folder %}<small>Folder: {{ photo.folder.title }}</small>{% endif %}
+        {% if photo.label %}<small>Label: {{ photo.label.title }}</small>{% endif %}
       </div>
 
       {% if request.user.is_staff %}

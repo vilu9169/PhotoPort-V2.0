@@ -2,12 +2,12 @@
 """
 Recover Photo records from image files on disk.
 This will recreate Photo objects for images that exist but aren't in the database.
-Note: Metadata (titles, descriptions, folders) will be lost and set to defaults.
+Note: Metadata (titles, descriptions, labels) will be lost and set to defaults.
 """
 from django.core.management.base import BaseCommand
 from django.core.files import File
 from django.db import transaction
-from portfolio.models import Photo, Folder
+from portfolio.models import Photo
 from pathlib import Path
 import os
 
@@ -118,4 +118,3 @@ class Command(BaseCommand):
                 )
             )
             self.stdout.write(f"Total photos in database: {Photo.objects.count()}")
-

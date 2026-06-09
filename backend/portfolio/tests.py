@@ -8,7 +8,7 @@ from django.urls import reverse
 from PIL import Image
 
 from .forms import MAX_UPLOAD_BYTES, PhotoForm
-from .models import Folder, Photo
+from .models import Label, Photo
 
 
 def image_upload(name="photo.jpg", image_format="JPEG", size=(32, 32)):
@@ -56,12 +56,12 @@ class PhotoSecurityTests(TestCase):
         self.assertEqual(response.json()["meta"]["offset"], 0)
         self.assertIn("public", response["Cache-Control"])
 
-    def test_api_includes_folder_metadata(self):
-        folder = Folder.objects.create(title="Japan", slug="japan", order=4)
+    def test_api_includes_label_metadata(self):
+        label = Label.objects.create(title="Japan", slug="japan", order=4)
         photo = Photo(
             title="Tokyo",
             description="Night street",
-            folder=folder,
+            label=label,
             image="photos/japan/tokyo.jpg",
             thumb="photos/japan/thumbs/tokyo.jpg",
             preview="photos/japan/previews/tokyo.jpg",
@@ -71,9 +71,10 @@ class PhotoSecurityTests(TestCase):
         response = self.client.get(reverse("photo_list_api"), secure=True)
         item = response.json()["results"][0]
 
+        self.assertEqual(item["label_title"], "Japan")
+        self.assertEqual(item["label_slug"], "japan")
+        self.assertEqual(item["label_order"], 4)
         self.assertEqual(item["folder_title"], "Japan")
-        self.assertEqual(item["folder_slug"], "japan")
-        self.assertEqual(item["folder_order"], 4)
 
     def test_photo_form_accepts_supported_image(self):
         form = PhotoForm(

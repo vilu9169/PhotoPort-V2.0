@@ -6,9 +6,15 @@ class PhotoSerializer(serializers.ModelSerializer):
     image_url = serializers.SerializerMethodField()
     thumbnail_url = serializers.SerializerMethodField()
     preview_url = serializers.SerializerMethodField()
-    folder_title = serializers.CharField(source="folder.title", read_only=True)
-    folder_slug = serializers.CharField(source="folder.slug", read_only=True)
-    folder_order = serializers.IntegerField(source="folder.order", read_only=True)
+    label_title = serializers.CharField(source="label.title", read_only=True)
+    label_slug = serializers.CharField(source="label.slug", read_only=True)
+    label_order = serializers.IntegerField(source="label.order", read_only=True)
+
+    # Temporary aliases allow an older frontend deployment to keep working.
+    folder = serializers.IntegerField(source="label_id", read_only=True)
+    folder_title = serializers.CharField(source="label.title", read_only=True)
+    folder_slug = serializers.CharField(source="label.slug", read_only=True)
+    folder_order = serializers.IntegerField(source="label.order", read_only=True)
 
     class Meta:
         model = Photo
@@ -23,6 +29,10 @@ class PhotoSerializer(serializers.ModelSerializer):
             "thumbnail_url",
             "preview_url",
             "blur_data_url",
+            "label",
+            "label_title",
+            "label_slug",
+            "label_order",
             "folder",
             "folder_title",
             "folder_slug",

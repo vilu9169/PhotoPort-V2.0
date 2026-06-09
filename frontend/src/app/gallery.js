@@ -31,11 +31,37 @@ export const getDetailSrc = (item) =>
 
 export const getSrc = (item) => buildUrl(item?.image_url || item?.image);
 
-const formatCollectionName = (photo) =>
-  photo.folder_title || photo.category || "Unsorted";
+const getPathCollectionSlug = (photo) => {
+  const rawPath =
+    photo.image_url || photo.thumbnail_url || photo.preview_url || photo.image || "";
+  const match = rawPath.match(/\/photos\/([^/]+)\//i);
+  const candidate = match?.[1]?.toLowerCase();
+
+  if (!candidate || /^\d{4}$/.test(candidate)) return "";
+  return candidate;
+};
+
+const titleFromSlug = (slug) =>
+  slug
+    .split("-")
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
 
 const getCollectionKey = (photo) =>
-  photo.folder_slug || (photo.category || "unsorted").toLowerCase().replace(/\s+/g, "-");
+  photo.label_slug ||
+  photo.folder_slug ||
+  getPathCollectionSlug(photo) ||
+  (photo.category || "unsorted").toLowerCase().replace(/\s+/g, "-");
+
+const formatCollectionName = (photo) => {
+  if (photo.label_title) return photo.label_title;
+  if (photo.folder_title) return photo.folder_title;
+  if (photo.category) return photo.category;
+
+  const pathSlug = getPathCollectionSlug(photo);
+  return pathSlug ? titleFromSlug(pathSlug) : "Unsorted";
+};
 
 const getPhotoDate = (value) => {
   if (!value) return "";
@@ -62,38 +88,20 @@ function CloseIcon() {
   );
 }
 
-function PhotoCard({ photo, index, ratio, onSelect }) {
+function PhotoCard({ photo, index, onSelect }) {
   const [loaded, setLoaded] = useState(false);
-  const isPortrait = ratio < 0.82;
-  const isWide = ratio > 1.45;
-  const sizeClass = isPortrait
-    ? "gallery-card--portrait"
-    : isWide
-      ? "gallery-card--wide"
-      : index % 7 === 0
-        ? "gallery-card--feature"
-        : "";
 
   return (
     <motion.button
       type="button"
-      layout
       initial={{ opacity: 0, y: 24 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: "-8%" }}
       transition={{ duration: 0.55, delay: Math.min(index * 0.035, 0.25) }}
-      className={`gallery-card ${sizeClass}`}
+      className="gallery-card"
       onClick={() => onSelect(photo)}
       aria-label={`Open ${photo.title || "photograph"}`}
     >
-      {photo.blur_data_url && (
-        <img
-          src={photo.blur_data_url}
-          alt=""
-          aria-hidden="true"
-          className={`gallery-card__blur ${loaded ? "is-loaded" : ""}`}
-        />
-      )}
       <img
         src={getThumbSrc(photo)}
         alt={photo.title || formatCollectionName(photo)}
@@ -250,7 +258,6 @@ function PhotoViewer({ photo, photos, onClose, onChange }) {
 
 const Gallery = () => {
   const [images, setImages] = useState([]);
-  const [aspectRatios, setAspectRatios] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [activeCollection, setActiveCollection] = useState("all");
@@ -285,21 +292,6 @@ const Gallery = () => {
       });
   }, []);
 
-  useEffect(() => {
-    if (!images.length) return;
-
-    images.forEach((photo) => {
-      const image = new Image();
-      image.src = getThumbSrc(photo);
-      image.onload = () => {
-        setAspectRatios((current) => ({
-          ...current,
-          [photo.id]: image.width / image.height || 1,
-        }));
-      };
-    });
-  }, [images]);
-
   const collections = useMemo(() => {
     const grouped = new Map();
 
@@ -309,7 +301,7 @@ const Gallery = () => {
         grouped.set(key, {
           key,
           title: formatCollectionName(photo),
-          order: photo.folder_order ?? -1,
+          order: photo.label_order ?? photo.folder_order ?? -1,
           photos: [],
         });
       }
@@ -427,7 +419,6 @@ const Gallery = () => {
                       key={photo.id}
                       photo={photo}
                       index={index}
-                      ratio={aspectRatios[photo.id] || 1}
                       onSelect={setSelectedPhoto}
                     />
                   ))}

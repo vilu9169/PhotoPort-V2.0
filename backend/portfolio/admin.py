@@ -2,10 +2,11 @@ from django.contrib import admin
 from django.utils.html import format_html
 
 from .forms import PhotoForm
-from .models import Photo, Folder
+from .models import Label, Photo
 
-@admin.register(Folder)
-class FolderAdmin(admin.ModelAdmin):
+
+@admin.register(Label)
+class LabelAdmin(admin.ModelAdmin):
     list_display = ("id", "title", "order", "photo_count")
     search_fields = ("title", "description")
     prepopulated_fields = {"slug": ("title",)}
@@ -15,10 +16,10 @@ class FolderAdmin(admin.ModelAdmin):
 @admin.register(Photo)
 class PhotoAdmin(admin.ModelAdmin):
     form = PhotoForm
-    list_display = ("id", "thumb", "title", "folder", "order")
-    list_filter = ("folder",)
+    list_display = ("id", "thumb", "title", "label", "order")
+    list_filter = ("label",)
     search_fields = ("title", "description")
-    list_select_related = ("folder",)
+    list_select_related = ("label",)
     ordering = ("-order", "-id")
     def thumb(self, obj):
         if obj.image:
