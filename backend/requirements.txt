@@ -6,7 +6,7 @@ django-cors-headers    # allow your Pages/frontend to call the API
 python-dotenv          # optional, for local dev
 django-storages
 dj-database-url
-djangorestframework>=3.14.0
+djangorestframework>=3.17.1
 djangorestframework-simplejwt
 Pillow
 boto3
