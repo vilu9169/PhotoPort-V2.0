@@ -27,6 +27,7 @@ const Gallery = () => {
   const [images, setImages] = useState([]);
   const [aspectRatios, setAspectRatios] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [selectedPhoto, setSelectedPhoto] = useState(null);
 
   const pageVariants = {
@@ -40,7 +41,16 @@ const Gallery = () => {
       console.warn("NEXT_PUBLIC_API_URL is not set");
     }
     fetch(`${API_URL}/api/photos/`)
-      .then((r) => r.json())
+      .then(async (response) => {
+        const contentType = response.headers.get("content-type") || "";
+        if (!response.ok) {
+          throw new Error(`Photo API returned HTTP ${response.status}`);
+        }
+        if (!contentType.includes("application/json")) {
+          throw new Error("Photo API returned a non-JSON response");
+        }
+        return response.json();
+      })
       .then((data) => {
         // support both {results: [...] } and bare arrays
         const items = Array.isArray(data) ? data : data?.results || [];
@@ -49,6 +59,7 @@ const Gallery = () => {
       })
       .catch((err) => {
         console.error("Error fetching photos:", err);
+        setError("The photo service is temporarily unavailable.");
         setLoading(false);
       });
   }, []);
@@ -131,6 +142,8 @@ const Gallery = () => {
           >
             {loading ? (
               <div>Loading...</div>
+            ) : error ? (
+              <div role="alert">{error}</div>
             ) : (
               images.map((image, index) => {
                 const ratio = aspectRatios[index] || 1;
