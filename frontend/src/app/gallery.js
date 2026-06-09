@@ -155,6 +155,7 @@ const Gallery = () => {
                     {image.blur_data_url && (
                       <img
                         src={image.blur_data_url}
+                        alt=""
                         aria-hidden
                         className="absolute inset-0 w-full h-full object-cover blur-md scale-105"
                       />

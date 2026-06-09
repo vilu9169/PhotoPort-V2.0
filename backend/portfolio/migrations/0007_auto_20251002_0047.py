@@ -50,13 +50,13 @@ class Migration(migrations.Migration):
             name='image',
             field=models.ImageField(upload_to=portfolio.models.photo_upload_to),
         ),
-        migrations.AddIndex(
-            model_name='photo',
-            index=models.Index(fields=['folder', '-order'], name='portfolio_p_folder__fdfe0a_idx'),
-        ),
         migrations.AddField(
             model_name='photo',
             name='folder',
             field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='photos', to='portfolio.folder'),
+        ),
+        migrations.AddIndex(
+            model_name='photo',
+            index=models.Index(fields=['folder', '-order'], name='portfolio_p_folder__fdfe0a_idx'),
         ),
     ]

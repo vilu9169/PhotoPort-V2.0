@@ -11,7 +11,7 @@ const Contact = () => {
                         </svg>
                     </span>
                     <span className="text-base align-baseline">
-                        <a href="https://www.instagram.com/lund.jpg/" target="_blank">@lund.jpg</a>
+                        <a href="https://www.instagram.com/lund.jpg/" target="_blank" rel="noopener noreferrer">@lund.jpg</a>
                     </span>
                 </div>
 
@@ -24,7 +24,7 @@ const Contact = () => {
                         </svg>
                     </span>
                     <span className="text-base align-baseline">
-                        <a href="https://www.linkedin.com/in/viktor-lundin-56253b1b7" target="_blank">Viktor Lundin</a>
+                        <a href="https://www.linkedin.com/in/viktor-lundin-56253b1b7" target="_blank" rel="noopener noreferrer">Viktor Lundin</a>
                     </span>
                 </div>
 
@@ -37,7 +37,7 @@ const Contact = () => {
                         </svg>
                     </span>
                     <span className="text-base align-baseline">
-                        <a href="https://github.com/vilu9169" target="_blank">Viklund96</a>
+                        <a href="https://github.com/vilu9169" target="_blank" rel="noopener noreferrer">Viklund96</a>
                     </span>
                 </div>
                     <div className="flex items-end space-x-2">
