@@ -68,6 +68,12 @@ const getPhotoDate = (value) => {
   return new Intl.DateTimeFormat("en", { year: "numeric" }).format(new Date(value));
 };
 
+const getCameraSettings = (photo) => [
+  { label: "Aperture", value: photo.aperture },
+  { label: "ISO", value: photo.iso },
+  { label: "Shutter", value: photo.shutter_speed },
+];
+
 function ArrowIcon({ direction = "right" }) {
   return (
     <svg
@@ -246,6 +252,14 @@ function PhotoViewer({ photo, photos, onClose, onChange }) {
           </div>
           <h2>{photo.title || "Untitled"}</h2>
           {photo.description && <p>{photo.description}</p>}
+          <div className="photo-viewer__camera" aria-label="Camera settings">
+            {getCameraSettings(photo).map((setting) => (
+              <div key={setting.label}>
+                <span>{setting.label}</span>
+                <strong>{setting.value || "-"}</strong>
+              </div>
+            ))}
+          </div>
           <div className="photo-viewer__footer">
             <span>{getPhotoDate(photo.created_at)}</span>
             <span>Use arrow keys or swipe</span>

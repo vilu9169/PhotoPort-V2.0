@@ -501,6 +501,39 @@ a:focus-visible {
   line-height: 1.75;
 }
 
+.photo-viewer__camera {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 30px;
+}
+
+.photo-viewer__camera div {
+  min-width: 0;
+  padding: 12px 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.photo-viewer__camera span,
+.photo-viewer__camera strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.photo-viewer__camera span {
+  color: #918e87;
+  font-size: 0.58rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.photo-viewer__camera strong {
+  margin-top: 8px;
+  color: #f1eee7;
+  font-size: 0.92rem;
+  font-weight: 500;
+}
+
 .photo-viewer__footer {
   margin-top: 48px;
 }
@@ -657,6 +690,10 @@ a:focus-visible {
 
   .photo-viewer__details h2 {
     margin: 20px 0 12px;
+  }
+
+  .photo-viewer__camera {
+    margin-top: 24px;
   }
 
   .photo-viewer__footer {

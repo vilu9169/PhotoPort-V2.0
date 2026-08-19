@@ -16,7 +16,16 @@ class LabelAdmin(admin.ModelAdmin):
 @admin.register(Photo)
 class PhotoAdmin(admin.ModelAdmin):
     form = PhotoForm
-    list_display = ("id", "thumb", "title", "label", "order")
+    list_display = (
+        "id",
+        "thumb",
+        "title",
+        "label",
+        "aperture",
+        "iso",
+        "shutter_speed",
+        "order",
+    )
     list_filter = ("label",)
     search_fields = ("title", "description")
     list_select_related = ("label",)

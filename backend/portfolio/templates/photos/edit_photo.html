@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Edit {{ photo.title }} - Photo manager</title>
+  {% include "photos/_admin_styles.html" %}
+</head>
+<body>
+  <main class="admin-page">
+    <header class="admin-header">
+      <div>
+        <p class="admin-kicker">Portfolio admin</p>
+        <h1>Edit {{ photo.title }}</h1>
+      </div>
+      <nav class="admin-actions" aria-label="Photo manager navigation">
+        <a class="button button--ghost" href="{% url 'photo_list' %}">Back to photos</a>
+        <a class="button button--accent" href="{% url 'upload_photo' %}">Upload photos</a>
+      </nav>
+    </header>
+
+    <section class="edit-layout">
+      <div class="edit-preview">
+        {% if photo.preview %}
+          <img src="{{ photo.preview.url }}" alt="{{ photo.title }}">
+        {% elif photo.image %}
+          <img src="{{ photo.image.url }}" alt="{{ photo.title }}">
+        {% endif %}
+      </div>
+
+      <aside class="edit-details">
+        <div class="panel">
+          <h2>{{ photo.title }}</h2>
+          <p class="muted">
+            {% if photo.label %}Folder: {{ photo.label.title }}{% else %}No folder{% endif %}
+          </p>
+
+          <div class="camera-grid" aria-label="Camera settings">
+            <div class="camera-stat">
+              <span>Aperture</span>
+              <strong>{{ photo.aperture|default:"-" }}</strong>
+            </div>
+            <div class="camera-stat">
+              <span>ISO</span>
+              <strong>{{ photo.iso|default:"-" }}</strong>
+            </div>
+            <div class="camera-stat">
+              <span>Shutter</span>
+              <strong>{{ photo.shutter_speed|default:"-" }}</strong>
+            </div>
+          </div>
+        </div>
+
+        <form class="panel" method="post" enctype="multipart/form-data">
+          {% csrf_token %}
+          {{ form.non_field_errors }}
+
+          {% for field in form %}
+            <div class="field">
+              {{ field.label_tag }}
+              {{ field }}
+              {% if field.help_text %}<small class="field-help">{{ field.help_text }}</small>{% endif %}
+              {{ field.errors }}
+            </div>
+          {% endfor %}
+
+          <div class="dialog-actions">
+            <a class="button button--ghost" href="{% url 'photo_list' %}">Cancel</a>
+            <button class="button--accent" type="submit">Save changes</button>
+          </div>
+        </form>
+
+        <div class="panel">
+          <p class="field-label">Photo actions</p>
+          <div class="card-actions">
+            {% if photo.label %}
+              <form class="inline-form" action="{% url 'remove_label' photo.id %}" method="post">
+                {% csrf_token %}
+                <button class="button--ghost" type="submit">Remove folder</button>
+              </form>
+            {% endif %}
+            <form class="inline-form" action="{% url 'delete_photo' photo.id %}" method="post">
+              {% csrf_token %}
+              <button class="button--danger" type="submit" onclick="return confirm('Delete this photo? This cannot be undone.');">Delete photo</button>
+            </form>
+          </div>
+        </div>
+      </aside>
+    </section>
+  </main>
+</body>
+</html>
