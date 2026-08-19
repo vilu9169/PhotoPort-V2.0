@@ -1,6 +1,7 @@
 import logging
 import os
 
+from django.conf import settings
 from django.shortcuts import render, redirect, get_object_or_404
 from django.db import models, transaction
 from django.contrib import messages
@@ -16,7 +17,12 @@ from .models import (
     schedule_photo_derivative_generation,
     schedule_storage_file_deletion,
 )
-from .forms import BulkPhotoUploadForm, FolderCreateForm, PhotoEditForm
+from .forms import (
+    BulkPhotoUploadForm,
+    FolderCreateForm,
+    PhotoEditForm,
+    prepare_uploaded_image_for_storage,
+)
 
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -223,19 +229,44 @@ def upload_photo(request):
 
             uploaded_photo_ids = []
             failed_names = []
+            optimized_count = 0
             for image in images:
+                original_name = image.name
+                stored_image = image
+                camera_settings = {}
+                was_optimized = False
+                if settings.USE_CLOUDINARY:
+                    try:
+                        (
+                            stored_image,
+                            camera_settings,
+                            was_optimized,
+                        ) = prepare_uploaded_image_for_storage(
+                            image,
+                            max_bytes=settings.CLOUDINARY_MAX_IMAGE_BYTES,
+                            max_pixels=settings.CLOUDINARY_MAX_IMAGE_PIXELS,
+                        )
+                    except Exception:
+                        logger.exception(
+                            "Unable to optimize photo %s",
+                            original_name,
+                        )
+                        failed_names.append(original_name)
+                        continue
+
                 photo = Photo(
                     title=_photo_title_from_upload(image, title_prefix),
                     description=description,
                     label=label,
-                    image=image,
+                    image=stored_image,
+                    **camera_settings,
                 )
                 photo._defer_derivatives = True
                 try:
                     photo.save()
                 except Exception:
-                    logger.exception("Unable to upload photo %s", image.name)
-                    failed_names.append(image.name)
+                    logger.exception("Unable to upload photo %s", original_name)
+                    failed_names.append(original_name)
                     if (
                         photo.image
                         and photo.image.name
@@ -244,6 +275,7 @@ def upload_photo(request):
                         schedule_storage_file_deletion([photo.image.name])
                 else:
                     uploaded_photo_ids.append(photo.pk)
+                    optimized_count += int(was_optimized)
 
             if uploaded_photo_ids:
                 _normalize_order(label)
@@ -255,6 +287,13 @@ def upload_photo(request):
                     f"photo{'s' if uploaded_count != 1 else ''}. "
                     "Optimized previews are processing.",
                 )
+                if optimized_count:
+                    messages.info(
+                        request,
+                        f"Optimized {optimized_count} oversized "
+                        f"photo{'s' if optimized_count != 1 else ''} "
+                        "for Cloudinary.",
+                    )
                 if failed_names:
                     failed_summary = ", ".join(failed_names[:3])
                     if len(failed_names) > 3:
