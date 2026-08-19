@@ -1,4 +1,4 @@
-from django.db import models
+from django.db import close_old_connections, models
 from django.utils.text import slugify
 from django.utils import timezone
 from django.db.models.signals import post_delete
@@ -95,25 +95,36 @@ def _format_shutter_speed_value(value):
 def extract_camera_settings(pil_img):
     try:
         exif = pil_img.getexif()
-    except (AttributeError, OSError, ValueError):
+        if not exif:
+            return {"aperture": "", "iso": "", "shutter_speed": ""}
+
+        exposure_time = _first_exif_value(exif, "ExposureTime")
+        shutter_speed_value = _first_exif_value(exif, "ShutterSpeedValue")
+
+        return {
+            "aperture": _format_aperture(_first_exif_value(exif, "FNumber")),
+            "iso": _format_iso(
+                _first_exif_value(
+                    exif,
+                    "ISOSpeedRatings",
+                    "PhotographicSensitivity",
+                )
+            ),
+            "shutter_speed": (
+                _format_exposure_time(exposure_time)
+                or _format_shutter_speed_value(shutter_speed_value)
+            ),
+        }
+    except (
+        AttributeError,
+        OSError,
+        OverflowError,
+        TypeError,
+        ValueError,
+        ZeroDivisionError,
+    ):
+        logger.warning("Unable to read camera settings from image EXIF", exc_info=True)
         return {"aperture": "", "iso": "", "shutter_speed": ""}
-
-    if not exif:
-        return {"aperture": "", "iso": "", "shutter_speed": ""}
-
-    exposure_time = _first_exif_value(exif, "ExposureTime")
-    shutter_speed_value = _first_exif_value(exif, "ShutterSpeedValue")
-
-    return {
-        "aperture": _format_aperture(_first_exif_value(exif, "FNumber")),
-        "iso": _format_iso(
-            _first_exif_value(exif, "ISOSpeedRatings", "PhotographicSensitivity")
-        ),
-        "shutter_speed": (
-            _format_exposure_time(exposure_time)
-            or _format_shutter_speed_value(shutter_speed_value)
-        ),
-    }
 
 
 def photo_upload_to(instance, filename):
@@ -273,10 +284,11 @@ class Photo(models.Model):
     def save(self, *args, **kwargs):
         """
         - On first save, set per-label order.
-        - Always ensure original is saved first, then generate derivatives,
-          then persist derivative fields only to avoid loops.
+        - Save EXIF with the original.
+        - Generate derivatives immediately unless the caller explicitly defers them.
         """
         is_create = not self.pk
+        defer_derivatives = getattr(self, "_defer_derivatives", False)
         previous_files = None
         image_changed = False
 
@@ -313,6 +325,15 @@ class Photo(models.Model):
             max_order = qs.aggregate(models.Max("order"))["order__max"]
             self.order = (max_order or 0) + 1
 
+        if defer_derivatives and self.image and (is_create or image_changed):
+            self.image.open()
+            try:
+                pil = Image.open(self.image)
+                for field, value in extract_camera_settings(pil).items():
+                    setattr(self, field, value)
+            finally:
+                self.image.seek(0)
+
         # save original (and any field changes)
         super().save(*args, **kwargs)
 
@@ -331,7 +352,7 @@ class Photo(models.Model):
                     file_field.delete(save=False)
 
         # If the original exists, generate derivatives
-        if self.image:
+        if self.image and not defer_derivatives:
             self.image.open()
             pil = Image.open(self.image)
             pil.load()
@@ -383,6 +404,57 @@ class Photo(models.Model):
             # persist only the derivative fields to avoid re-triggering logic
             if derivative_update_fields:
                 super().save(update_fields=sorted(set(derivative_update_fields)))
+
+
+def generate_photo_derivatives(photo_ids):
+    close_old_connections()
+    try:
+        for photo_id in photo_ids:
+            try:
+                photo = Photo.objects.get(pk=photo_id)
+            except Photo.DoesNotExist:
+                continue
+
+            try:
+                photo.generate_derivatives()
+            except Exception:
+                logger.exception("Unable to generate derivatives for photo %s", photo_id)
+            updates = {}
+            if photo.thumb and photo.thumb.name:
+                updates["thumb"] = photo.thumb.name
+            if photo.preview and photo.preview.name:
+                updates["preview"] = photo.preview.name
+            if photo.blur_data_url:
+                updates["blur_data_url"] = photo.blur_data_url
+            for field in ("aperture", "iso", "shutter_speed"):
+                value = getattr(photo, field)
+                if value:
+                    updates[field] = value
+            if updates:
+                try:
+                    Photo.objects.filter(pk=photo_id).update(**updates)
+                except Exception:
+                    logger.exception(
+                        "Unable to persist derivatives for photo %s",
+                        photo_id,
+                    )
+    finally:
+        close_old_connections()
+
+
+def schedule_photo_derivative_generation(photo_ids):
+    ids = tuple(dict.fromkeys(photo_id for photo_id in photo_ids if photo_id))
+    if not ids:
+        return
+
+    derivative_thread = threading.Thread(
+        target=generate_photo_derivatives,
+        args=(ids,),
+        name="photo-derivative-generation",
+        daemon=True,
+    )
+    derivative_thread.start()
+
 
 @receiver(post_delete, sender=Photo)
 def delete_file_from_storage_on_delete(sender, instance, **kwargs):
