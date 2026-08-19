@@ -1,19 +1,32 @@
 import io
+import shutil
+import tempfile
 from unittest.mock import patch
 
+from django.contrib.auth import get_user_model
 from django.db import OperationalError
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from PIL import Image
 
-from .forms import MAX_UPLOAD_BYTES, PhotoForm
+from .forms import MAX_UPLOAD_BYTES, BulkPhotoUploadForm, PhotoForm
 from .models import Label, Photo
 
 
-def image_upload(name="photo.jpg", image_format="JPEG", size=(32, 32)):
+def image_upload(name="photo.jpg", image_format="JPEG", size=(32, 32), exif=None):
     output = io.BytesIO()
-    Image.new("RGB", size, color="white").save(output, format=image_format)
+    save_kwargs = {}
+    if exif:
+        image_exif = Image.Exif()
+        for tag, value in exif.items():
+            image_exif[tag] = value
+        save_kwargs["exif"] = image_exif
+    Image.new("RGB", size, color="white").save(
+        output,
+        format=image_format,
+        **save_kwargs,
+    )
     return SimpleUploadedFile(
         name,
         output.getvalue(),
@@ -22,6 +35,23 @@ def image_upload(name="photo.jpg", image_format="JPEG", size=(32, 32)):
 
 
 class PhotoSecurityTests(TestCase):
+    def setUp(self):
+        super().setUp()
+        self.media_root = tempfile.mkdtemp()
+        self.media_override = override_settings(MEDIA_ROOT=self.media_root)
+        self.media_override.enable()
+        self.addCleanup(self.media_override.disable)
+        self.addCleanup(shutil.rmtree, self.media_root, ignore_errors=True)
+
+    def login_staff(self):
+        user = get_user_model().objects.create_user(
+            username="staff",
+            password="test-password-123",
+            is_staff=True,
+        )
+        self.client.force_login(user)
+        return user
+
     def test_health_reports_database_available(self):
         response = self.client.get("/health/", secure=True)
 
@@ -44,6 +74,17 @@ class PhotoSecurityTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertIn("/admin/login/", response["Location"])
 
+    def test_anonymous_user_cannot_access_folder_manager(self):
+        label = Label.objects.create(title="Private", slug="private")
+
+        response = self.client.get(
+            reverse("label_detail", args=[label.slug]),
+            secure=True,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/admin/login/", response["Location"])
+
     def test_api_clamps_negative_pagination_values(self):
         response = self.client.get(
             reverse("photo_list_api"),
@@ -62,6 +103,9 @@ class PhotoSecurityTests(TestCase):
             title="Tokyo",
             description="Night street",
             label=label,
+            aperture="f/2.8",
+            iso="400",
+            shutter_speed="1/250",
             image="photos/japan/tokyo.jpg",
             thumb="photos/japan/thumbs/tokyo.jpg",
             preview="photos/japan/previews/tokyo.jpg",
@@ -75,6 +119,9 @@ class PhotoSecurityTests(TestCase):
         self.assertEqual(item["label_slug"], "japan")
         self.assertEqual(item["label_order"], 4)
         self.assertEqual(item["folder_title"], "Japan")
+        self.assertEqual(item["aperture"], "f/2.8")
+        self.assertEqual(item["iso"], "400")
+        self.assertEqual(item["shutter_speed"], "1/250")
 
     def test_photo_form_accepts_supported_image(self):
         form = PhotoForm(
@@ -107,3 +154,243 @@ class PhotoSecurityTests(TestCase):
 
         self.assertFalse(form.is_valid())
         self.assertIn("Only JPEG, PNG, and WebP", form.errors["image"][0])
+
+    def test_photo_save_extracts_camera_settings_from_exif(self):
+        photo = Photo.objects.create(
+            title="Manual",
+            description="EXIF image",
+            image=image_upload(
+                exif={
+                    33434: (1, 250),  # ExposureTime
+                    33437: (28, 10),  # FNumber
+                    34855: 400,  # ISOSpeedRatings
+                }
+            ),
+        )
+
+        self.assertEqual(photo.aperture, "f/2.8")
+        self.assertEqual(photo.iso, "400")
+        self.assertEqual(photo.shutter_speed, "1/250")
+
+    def test_bulk_photo_upload_form_accepts_multiple_images(self):
+        form = BulkPhotoUploadForm(
+            data={"description": "Batch"},
+            files={"images": [image_upload("one.jpg"), image_upload("two.jpg")]},
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(len(form.cleaned_data["images"]), 2)
+
+    def test_staff_can_bulk_upload_photos(self):
+        label = Label.objects.create(title="Japan", slug="japan", order=4)
+        self.login_staff()
+
+        response = self.client.post(
+            reverse("upload_photo"),
+            data={
+                "label": label.id,
+                "title_prefix": "Trip",
+                "description": "Batch upload",
+                "images": [
+                    image_upload(
+                        "first-photo.jpg",
+                        exif={
+                            33434: (1, 125),
+                            33437: (4, 1),
+                            34855: 800,
+                        },
+                    ),
+                    image_upload("second-photo.jpg"),
+                ],
+            },
+            secure=True,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(Photo.objects.count(), 2)
+
+        first = Photo.objects.get(title="Trip - First Photo")
+        self.assertEqual(first.label, label)
+        self.assertEqual(first.description, "Batch upload")
+        self.assertEqual(first.aperture, "f/4")
+        self.assertEqual(first.iso, "800")
+        self.assertEqual(first.shutter_speed, "1/125")
+
+    def test_staff_can_remove_photo_from_folder(self):
+        label = Label.objects.create(title="Japan", slug="japan", order=4)
+        photo = Photo.objects.create(
+            title="Tokyo",
+            description="Street",
+            label=label,
+            image=image_upload(),
+        )
+        self.login_staff()
+
+        response = self.client.post(
+            reverse("remove_label", args=[photo.id]),
+            secure=True,
+        )
+        photo.refresh_from_db()
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIsNone(photo.label)
+
+    def test_staff_can_create_folder_with_unique_slug(self):
+        Label.objects.create(title="Existing", slug="stockholm-streets")
+        self.login_staff()
+
+        response = self.client.post(
+            reverse("create_folder"),
+            data={
+                "title": "Stockholm streets",
+                "description": "Evening walks",
+            },
+            secure=True,
+        )
+
+        folder = Label.objects.get(title="Stockholm streets")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(folder.slug, "stockholm-streets-2")
+        self.assertEqual(folder.description, "Evening walks")
+        self.assertEqual(response["Location"], reverse("label_detail", args=[folder.slug]))
+
+    def test_photo_manager_renders_folder_and_bulk_controls(self):
+        Label.objects.create(title="City", slug="city")
+        self.login_staff()
+
+        response = self.client.get(reverse("photo_list"), secure=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "New folder")
+        self.assertContains(response, "Edit selected")
+        self.assertContains(response, "Delete selected")
+        self.assertContains(response, "City")
+
+    def test_staff_can_bulk_edit_selected_photos(self):
+        source = Label.objects.create(title="Inbox", slug="inbox")
+        target = Label.objects.create(title="Portfolio", slug="portfolio")
+        photos = Photo.objects.bulk_create(
+            [
+                Photo(
+                    title="One",
+                    description="Old",
+                    label=source,
+                    image="photos/one.jpg",
+                    order=2,
+                ),
+                Photo(
+                    title="Two",
+                    description="Old",
+                    label=source,
+                    image="photos/two.jpg",
+                    order=1,
+                ),
+                Photo(
+                    title="Three",
+                    description="Keep",
+                    label=source,
+                    image="photos/three.jpg",
+                    order=3,
+                ),
+            ]
+        )
+        self.login_staff()
+
+        response = self.client.post(
+            reverse("bulk_photos"),
+            data={
+                "photo_ids": [photos[0].id, photos[1].id],
+                "action": "edit",
+                "folder": str(target.id),
+                "replace_description": "on",
+                "description": "Published set",
+            },
+            secure=True,
+        )
+
+        for photo in photos:
+            photo.refresh_from_db()
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(photos[0].label, target)
+        self.assertEqual(photos[1].label, target)
+        self.assertEqual(photos[0].description, "Published set")
+        self.assertEqual(photos[1].description, "Published set")
+        self.assertEqual(photos[2].label, source)
+        self.assertEqual(photos[2].description, "Keep")
+
+    def test_staff_can_bulk_remove_folder(self):
+        label = Label.objects.create(title="Inbox", slug="inbox")
+        photos = Photo.objects.bulk_create(
+            [
+                Photo(
+                    title="One",
+                    description="",
+                    label=label,
+                    image="photos/one.jpg",
+                ),
+                Photo(
+                    title="Two",
+                    description="",
+                    label=label,
+                    image="photos/two.jpg",
+                ),
+            ]
+        )
+        self.login_staff()
+
+        response = self.client.post(
+            reverse("bulk_photos"),
+            data={
+                "photo_ids": [photo.id for photo in photos],
+                "action": "edit",
+                "folder": "__none__",
+            },
+            secure=True,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(Photo.objects.filter(label=label).exists())
+        self.assertEqual(Photo.objects.filter(label__isnull=True).count(), 2)
+
+    def test_staff_can_bulk_delete_only_selected_photos(self):
+        label = Label.objects.create(title="Inbox", slug="inbox")
+        photos = Photo.objects.bulk_create(
+            [
+                Photo(
+                    title="One",
+                    description="",
+                    label=label,
+                    image="photos/one.jpg",
+                    order=3,
+                ),
+                Photo(
+                    title="Two",
+                    description="",
+                    label=label,
+                    image="photos/two.jpg",
+                    order=2,
+                ),
+                Photo(
+                    title="Three",
+                    description="",
+                    label=label,
+                    image="photos/three.jpg",
+                    order=1,
+                ),
+            ]
+        )
+        self.login_staff()
+
+        response = self.client.post(
+            reverse("bulk_photos"),
+            data={
+                "photo_ids": [photos[0].id, photos[2].id],
+                "action": "delete",
+            },
+            secure=True,
+        )
+
+        photos[1].refresh_from_db()
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(Photo.objects.count(), 1)
+        self.assertEqual(photos[1].order, 1)

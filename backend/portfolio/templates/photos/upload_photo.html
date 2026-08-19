@@ -1,17 +1,69 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Upload Photo</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Upload photos - Photo manager</title>
+  {% include "photos/_admin_styles.html" %}
 </head>
 <body>
-    <h1>Upload Photo</h1>
-    <form method="post" enctype="multipart/form-data">
+  <main class="admin-page">
+    <header class="admin-header">
+      <div>
+        <p class="admin-kicker">Portfolio admin</p>
+        <h1>Upload photos</h1>
+      </div>
+      <nav class="admin-actions" aria-label="Photo manager navigation">
+        <a class="button button--ghost" href="{% url 'photo_list' %}">Back to photos</a>
+      </nav>
+    </header>
+
+    {% if messages %}
+      <ul class="message-list">
+        {% for message in messages %}
+          <li class="{{ message.tags }}">{{ message }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+    <div class="form-layout">
+      <form class="panel" method="post" enctype="multipart/form-data">
         {% csrf_token %}
-        {{ form.as_p }}
-        <button type="submit">Upload</button>
-    </form>
-    <a href="{% url 'photo_list' %}">Back to Gallery</a>
+        {{ form.non_field_errors }}
+        <p class="form-intro">Camera settings are read automatically from each image. Titles are created from filenames and can be refined later.</p>
+
+        {% for field in form %}
+          <div class="field">
+            {{ field.label_tag }}
+            {{ field }}
+            {% if field.name == "images" %}
+              <strong id="upload-summary" class="field-help">No files selected</strong>
+            {% endif %}
+            {% if field.help_text %}<small class="field-help">{{ field.help_text }}</small>{% endif %}
+            {{ field.errors }}
+          </div>
+        {% endfor %}
+
+        <div class="dialog-actions">
+          <a class="button button--ghost" href="{% url 'photo_list' %}">Cancel</a>
+          <button class="button--accent" type="submit">Upload photos</button>
+        </div>
+      </form>
+    </div>
+  </main>
+
+  <script>
+    (() => {
+      const imageInput = document.getElementById("id_images");
+      const summary = document.getElementById("upload-summary");
+      imageInput.addEventListener("change", () => {
+        const files = Array.from(imageInput.files);
+        const totalMegabytes = files.reduce((total, file) => total + file.size, 0) / 1024 / 1024;
+        summary.textContent = files.length
+          ? `${files.length} file${files.length === 1 ? "" : "s"} selected, ${totalMegabytes.toFixed(1)} MB`
+          : "No files selected";
+      });
+    })();
+  </script>
 </body>
 </html>

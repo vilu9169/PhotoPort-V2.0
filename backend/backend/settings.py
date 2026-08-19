@@ -211,8 +211,8 @@ else:
     MEDIA_URL = "/media/"
 
 # Reject unexpectedly large requests before application code handles them.
-DATA_UPLOAD_MAX_MEMORY_SIZE = 25 * 1024 * 1024
-DATA_UPLOAD_MAX_NUMBER_FILES = 1
+DATA_UPLOAD_MAX_MEMORY_SIZE = 300 * 1024 * 1024
+DATA_UPLOAD_MAX_NUMBER_FILES = 25
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 
 # ---------------------------------------------------------------------

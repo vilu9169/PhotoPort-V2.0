@@ -1,41 +1,310 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>{% if active_label %}{{ active_label.title }} • {% endif %}Photo Gallery</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% if active_label %}{{ active_label.title }}{% elif show_unfiled %}No folder{% else %}Photos{% endif %} - Photo manager</title>
+  {% include "photos/_admin_styles.html" %}
 </head>
 <body>
-  <h1>{% if active_label %}{{ active_label.title }}{% else %}Photo Gallery{% endif %}</h1>
-
-  {% if request.user.is_staff %}
-    <a href="{% url 'upload_photo' %}">Upload a new photo</a>
-  {% endif %}
-
-  <div>
-    {% for photo in photos %}
+  <main class="admin-page">
+    <header class="admin-header">
       <div>
-        <h2>{{ photo.title }}</h2>
-        {% if photo.image %}
-          <img src="{{ photo.image.url }}" alt="{{ photo.title }}" width="300">
-        {% endif %}
-        <p>{{ photo.description }}</p>
-        {% if photo.label %}<small>Label: {{ photo.label.title }}</small>{% endif %}
+        <p class="admin-kicker">Portfolio admin</p>
+        <h1>Photo manager</h1>
       </div>
+      <nav class="admin-actions" aria-label="Photo manager actions">
+        <button class="button--ghost" type="button" data-dialog-open="folder-dialog">New folder</button>
+        <a class="button button--accent" href="{% url 'upload_photo' %}">Upload photos</a>
+      </nav>
+    </header>
 
-      {% if request.user.is_staff %}
-        <form action="{% url 'up' photo.id %}" method="post" style="display:inline">{% csrf_token %}<button type="submit">Up</button></form>
-        <form action="{% url 'down' photo.id %}" method="post" style="display:inline">{% csrf_token %}<button type="submit">Down</button></form>
-        <form action="{% url 'top' photo.id %}" method="post" style="display:inline">{% csrf_token %}<button type="submit">Top</button></form>
-        <form action="{% url 'bottom' photo.id %}" method="post" style="display:inline">{% csrf_token %}<button type="submit">Bottom</button></form>
-        <form action="{% url 'delete_photo' photo.id %}" method="post" style="display:inline">
+    {% if messages %}
+      <ul class="message-list" aria-live="polite">
+        {% for message in messages %}
+          <li class="{{ message.tags }}">{{ message }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+    <div class="manager-layout">
+      <aside class="folder-nav" aria-label="Photo folders">
+        <div class="folder-nav__heading">
+          <h2>Folders</h2>
+          <button class="button--ghost" type="button" data-dialog-open="folder-dialog">New</button>
+        </div>
+        <ul class="folder-list">
+          <li>
+            <a href="{% url 'photo_list' %}"{% if not active_label and not show_unfiled %} aria-current="page"{% endif %}>
+              <span>All photos</span>
+              <span class="folder-count">{{ total_photo_count }}</span>
+            </a>
+          </li>
+          <li>
+            <a href="{% url 'photo_list' %}?view=unfiled"{% if show_unfiled %} aria-current="page"{% endif %}>
+              <span>No folder</span>
+              <span class="folder-count">{{ unfiled_count }}</span>
+            </a>
+          </li>
+          {% for label in labels %}
+            <li>
+              <a href="{% url 'label_detail' label.slug %}"{% if active_label.id == label.id %} aria-current="page"{% endif %}>
+                <span>{{ label.title }}</span>
+                <span class="folder-count">{{ label.photo_count }}</span>
+              </a>
+            </li>
+          {% endfor %}
+        </ul>
+      </aside>
+
+      <section class="gallery-column" aria-labelledby="gallery-title">
+        <div class="gallery-heading">
+          <h2 id="gallery-title">
+            {% if active_label %}{{ active_label.title }}{% elif show_unfiled %}No folder{% else %}All photos{% endif %}
+          </h2>
+          <p>{{ photos|length }} shown</p>
+        </div>
+
+        <form id="bulk-photo-form" method="post" action="{% url 'bulk_photos' %}">
           {% csrf_token %}
-          <button type="submit" onclick="return confirm('Delete this photo? This cannot be undone.');">Delete</button>
+          <input type="hidden" name="return_label" value="{% if active_label %}{{ active_label.slug }}{% endif %}">
+          <input type="hidden" name="return_view" value="{% if show_unfiled %}unfiled{% endif %}">
         </form>
+
+        <div class="bulk-bar" aria-label="Bulk photo actions">
+          <div class="bulk-bar__selection">
+            <label class="select-all-label" for="select-all-photos">
+              <input id="select-all-photos" type="checkbox">
+              <span>Select all</span>
+            </label>
+            <strong id="selection-count" aria-live="polite">0 selected</strong>
+          </div>
+          <div class="bulk-bar__actions">
+            <button class="button--ghost" type="button" data-dialog-open="bulk-edit-dialog" data-requires-selection disabled>Edit selected</button>
+            <button
+              class="button--danger"
+              type="submit"
+              form="bulk-photo-form"
+              name="action"
+              value="delete"
+              data-requires-selection
+              disabled
+              onclick="return confirm('Delete the selected photos? This cannot be undone.');"
+            >Delete selected</button>
+          </div>
+        </div>
+
+        <div class="photo-grid" aria-label="Uploaded photos">
+          {% for photo in photos %}
+            <article class="photo-card" data-photo-card>
+              <label class="photo-select">
+                <span class="visually-hidden">Select {{ photo.title }}</span>
+                <input
+                  type="checkbox"
+                  name="photo_ids"
+                  value="{{ photo.id }}"
+                  form="bulk-photo-form"
+                  data-photo-select
+                >
+              </label>
+
+              <a class="photo-card__image" href="{% url 'edit_photo' photo.id %}" aria-label="Edit {{ photo.title }}">
+                {% if photo.thumb %}
+                  <img src="{{ photo.thumb.url }}" alt="{{ photo.title }}" loading="lazy">
+                {% elif photo.image %}
+                  <img src="{{ photo.image.url }}" alt="{{ photo.title }}" loading="lazy">
+                {% endif %}
+              </a>
+
+              <div class="photo-card__body">
+                <div>
+                  <h3>{{ photo.title }}</h3>
+                  <p class="muted">
+                    {% if photo.label %}{{ photo.label.title }}{% else %}No folder{% endif %}
+                  </p>
+                </div>
+
+                {% if photo.description %}
+                  <p class="photo-description">{{ photo.description }}</p>
+                {% endif %}
+
+                <div class="camera-grid" aria-label="Camera settings">
+                  <div class="camera-stat">
+                    <span>Aperture</span>
+                    <strong>{{ photo.aperture|default:"-" }}</strong>
+                  </div>
+                  <div class="camera-stat">
+                    <span>ISO</span>
+                    <strong>{{ photo.iso|default:"-" }}</strong>
+                  </div>
+                  <div class="camera-stat">
+                    <span>Shutter</span>
+                    <strong>{{ photo.shutter_speed|default:"-" }}</strong>
+                  </div>
+                </div>
+
+                <div class="card-actions">
+                  <a class="button button--ghost" href="{% url 'edit_photo' photo.id %}">Edit</a>
+                  {% if photo.label %}
+                    <form class="inline-form" action="{% url 'remove_label' photo.id %}" method="post">
+                      {% csrf_token %}
+                      <button class="button--ghost" type="submit">Remove folder</button>
+                    </form>
+                  {% endif %}
+                  <form class="inline-form" action="{% url 'delete_photo' photo.id %}" method="post">
+                    {% csrf_token %}
+                    <button class="button--danger" type="submit" onclick="return confirm('Delete this photo? This cannot be undone.');">Delete</button>
+                  </form>
+                </div>
+
+                <div class="order-actions" aria-label="Order controls for {{ photo.title }}">
+                  <form class="inline-form" action="{% url 'up' photo.id %}" method="post">{% csrf_token %}<button type="submit">Move up</button></form>
+                  <form class="inline-form" action="{% url 'down' photo.id %}" method="post">{% csrf_token %}<button type="submit">Move down</button></form>
+                  <form class="inline-form" action="{% url 'top' photo.id %}" method="post">{% csrf_token %}<button type="submit">First</button></form>
+                  <form class="inline-form" action="{% url 'bottom' photo.id %}" method="post">{% csrf_token %}<button type="submit">Last</button></form>
+                </div>
+              </div>
+            </article>
+          {% empty %}
+            <div class="panel empty-state">
+              <div>
+                <h2>No photos here</h2>
+                <p class="muted">Upload photos or move existing images into this folder.</p>
+                <a class="button button--accent" href="{% url 'upload_photo' %}">Upload photos</a>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <dialog id="bulk-edit-dialog" aria-labelledby="bulk-edit-title">
+    <div class="dialog-header">
+      <div>
+        <h2 id="bulk-edit-title">Edit selected photos</h2>
+        <p>Only the fields you choose here will be changed.</p>
+      </div>
+      <button class="dialog-close" type="button" data-dialog-close aria-label="Close">&times;</button>
+    </div>
+    <div class="dialog-body">
+      <div class="field">
+        <label for="bulk-folder">Folder</label>
+        <select id="bulk-folder" name="folder" form="bulk-photo-form">
+          <option value="__keep__">Keep current folders</option>
+          <option value="__none__">No folder</option>
+          {% for label in labels %}
+            <option value="{{ label.id }}">{{ label.title }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="checkbox-field">
+        <input id="replace-description" type="checkbox" name="replace_description" form="bulk-photo-form">
+        <label for="replace-description">
+          <strong>Replace description</strong>
+          <span class="muted">Enable this to give every selected photo the text below.</span>
+        </label>
+      </div>
+      <div class="field">
+        <label for="bulk-description">Description</label>
+        <textarea id="bulk-description" name="description" form="bulk-photo-form" placeholder="Shared description for the selected photos"></textarea>
+      </div>
+    </div>
+    <div class="dialog-footer">
+      <div class="dialog-actions">
+        <button class="button--ghost" type="button" data-dialog-close>Cancel</button>
+        <button class="button--accent" type="submit" form="bulk-photo-form" name="action" value="edit">Save selected</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="folder-dialog" aria-labelledby="folder-dialog-title">
+    <form method="post" action="{% url 'create_folder' %}">
+      {% csrf_token %}
+      <input type="hidden" name="return_label" value="{% if active_label %}{{ active_label.slug }}{% endif %}">
+      <input type="hidden" name="return_view" value="{% if show_unfiled %}unfiled{% endif %}">
+      <div class="dialog-header">
+        <div>
+          <h2 id="folder-dialog-title">Create a folder</h2>
+          <p>Folders organize the public gallery and make batch uploads easier to manage.</p>
+        </div>
+        <button class="dialog-close" type="button" data-dialog-close aria-label="Close">&times;</button>
+      </div>
+      <div class="dialog-body">
+        {{ folder_form.non_field_errors }}
+        {% for field in folder_form %}
+          <div class="field">
+            {{ field.label_tag }}
+            {{ field }}
+            {{ field.errors }}
+          </div>
+        {% endfor %}
+      </div>
+      <div class="dialog-footer">
+        <div class="dialog-actions">
+          <button class="button--ghost" type="button" data-dialog-close>Cancel</button>
+          <button class="button--accent" type="submit">Create folder</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+    (() => {
+      const photoCheckboxes = Array.from(document.querySelectorAll("[data-photo-select]"));
+      const selectAll = document.getElementById("select-all-photos");
+      const selectionCount = document.getElementById("selection-count");
+      const selectionActions = Array.from(document.querySelectorAll("[data-requires-selection]"));
+
+      const updateSelection = () => {
+        const selectedCount = photoCheckboxes.filter((checkbox) => checkbox.checked).length;
+        selectionCount.textContent = `${selectedCount} selected`;
+        selectionActions.forEach((action) => {
+          action.disabled = selectedCount === 0;
+        });
+        photoCheckboxes.forEach((checkbox) => {
+          checkbox.closest("[data-photo-card]").classList.toggle("is-selected", checkbox.checked);
+        });
+        selectAll.checked = photoCheckboxes.length > 0 && selectedCount === photoCheckboxes.length;
+        selectAll.indeterminate = selectedCount > 0 && selectedCount < photoCheckboxes.length;
+      };
+
+      photoCheckboxes.forEach((checkbox) => checkbox.addEventListener("change", updateSelection));
+      selectAll.addEventListener("change", () => {
+        photoCheckboxes.forEach((checkbox) => {
+          checkbox.checked = selectAll.checked;
+        });
+        updateSelection();
+      });
+
+      document.querySelectorAll("[data-dialog-open]").forEach((trigger) => {
+        trigger.addEventListener("click", () => {
+          const dialog = document.getElementById(trigger.dataset.dialogOpen);
+          if (dialog.showModal) {
+            dialog.showModal();
+          } else {
+            dialog.setAttribute("open", "");
+          }
+        });
+      });
+
+      document.querySelectorAll("[data-dialog-close]").forEach((trigger) => {
+        trigger.addEventListener("click", () => trigger.closest("dialog").close());
+      });
+
+      document.querySelectorAll("dialog").forEach((dialog) => {
+        dialog.addEventListener("click", (event) => {
+          if (event.target === dialog) {
+            dialog.close();
+          }
+        });
+      });
+
+      updateSelection();
+      {% if open_folder_dialog %}
+        document.getElementById("folder-dialog").showModal();
       {% endif %}
-    {% empty %}
-      <p>No photos yet.</p>
-    {% endfor %}
-  </div>
+    })();
+  </script>
 </body>
 </html>
