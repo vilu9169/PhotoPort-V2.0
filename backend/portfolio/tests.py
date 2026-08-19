@@ -11,7 +11,7 @@ from django.urls import reverse
 from PIL import Image
 
 from .forms import MAX_UPLOAD_BYTES, BulkPhotoUploadForm, PhotoForm
-from .models import Label, Photo
+from .models import Label, Photo, generate_photo_derivatives
 
 
 def image_upload(name="photo.jpg", image_format="JPEG", size=(32, 32), exif=None):
@@ -181,7 +181,8 @@ class PhotoSecurityTests(TestCase):
         self.assertTrue(form.is_valid(), form.errors)
         self.assertEqual(len(form.cleaned_data["images"]), 2)
 
-    def test_staff_can_bulk_upload_photos(self):
+    @patch("portfolio.views.schedule_photo_derivative_generation")
+    def test_staff_can_bulk_upload_photos(self, schedule_derivatives):
         label = Label.objects.create(title="Japan", slug="japan", order=4)
         self.login_staff()
 
@@ -215,6 +216,74 @@ class PhotoSecurityTests(TestCase):
         self.assertEqual(first.aperture, "f/4")
         self.assertEqual(first.iso, "800")
         self.assertEqual(first.shutter_speed, "1/125")
+        self.assertFalse(first.thumb)
+        self.assertFalse(first.preview)
+        schedule_derivatives.assert_called_once()
+        self.assertCountEqual(
+            schedule_derivatives.call_args.args[0],
+            Photo.objects.values_list("id", flat=True),
+        )
+
+    def test_deferred_derivatives_are_generated_and_persisted(self):
+        photo = Photo(
+            title="Deferred",
+            description="",
+            image=image_upload(
+                exif={
+                    33434: (1, 200),
+                    33437: (28, 10),
+                    34855: 320,
+                }
+            ),
+        )
+        photo._defer_derivatives = True
+        photo.save()
+
+        self.assertFalse(photo.thumb)
+        self.assertFalse(photo.preview)
+        self.assertEqual(photo.iso, "320")
+
+        generate_photo_derivatives([photo.pk])
+        photo.refresh_from_db()
+
+        self.assertTrue(photo.thumb)
+        self.assertTrue(photo.preview)
+        self.assertTrue(photo.blur_data_url.startswith("data:image/jpeg;base64,"))
+        self.assertEqual(photo.aperture, "f/2.8")
+        self.assertEqual(photo.shutter_speed, "1/200")
+
+    @patch("portfolio.views.schedule_photo_derivative_generation")
+    def test_bulk_upload_continues_after_one_file_fails(
+        self,
+        schedule_derivatives,
+    ):
+        self.login_staff()
+        original_save = Photo.save
+
+        def fail_one_upload(photo, *args, **kwargs):
+            if photo.title == "Broken":
+                raise OSError("storage unavailable")
+            return original_save(photo, *args, **kwargs)
+
+        with patch.object(Photo, "save", new=fail_one_upload):
+            response = self.client.post(
+                reverse("upload_photo"),
+                data={
+                    "description": "Partial batch",
+                    "images": [
+                        image_upload("broken.jpg"),
+                        image_upload("working.jpg"),
+                    ],
+                },
+                secure=True,
+                follow=True,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Photo.objects.count(), 1)
+        self.assertEqual(Photo.objects.get().title, "Working")
+        self.assertContains(response, "Could not upload 1 file: broken.jpg.")
+        schedule_derivatives.assert_called_once()
 
     def test_staff_can_remove_photo_from_folder(self):
         label = Label.objects.create(title="Japan", slug="japan", order=4)
