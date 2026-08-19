@@ -1,7 +1,12 @@
-from django import forms
-from PIL import Image, UnidentifiedImageError
+import io
+import math
+import os
 
-from .models import Label, Photo
+from django import forms
+from django.core.files.uploadedfile import SimpleUploadedFile
+from PIL import Image, ImageOps, UnidentifiedImageError
+
+from .models import Label, Photo, extract_camera_settings
 
 
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
@@ -9,6 +14,7 @@ MAX_BULK_UPLOAD_BYTES = 300 * 1024 * 1024
 MAX_BULK_UPLOAD_FILES = 25
 MAX_IMAGE_PIXELS = 40_000_000
 ALLOWED_IMAGE_FORMATS = {"JPEG", "PNG", "WEBP"}
+JPEG_UPLOAD_QUALITIES = (90, 85, 80, 75, 70, 65, 60)
 
 
 def validate_uploaded_image(image):
@@ -34,6 +40,86 @@ def validate_uploaded_image(image):
         image.seek(0)
 
     return image
+
+
+def _flatten_for_jpeg(pil_image):
+    if "A" not in pil_image.getbands():
+        return pil_image.convert("RGB")
+
+    rgba_image = pil_image.convert("RGBA")
+    background = Image.new("RGB", rgba_image.size, "white")
+    background.paste(rgba_image, mask=rgba_image.getchannel("A"))
+    return background
+
+
+def _encode_jpeg(pil_image, quality):
+    output = io.BytesIO()
+    pil_image.save(
+        output,
+        format="JPEG",
+        quality=quality,
+        optimize=True,
+        progressive=True,
+    )
+    return output.getvalue()
+
+
+def prepare_uploaded_image_for_storage(image, max_bytes, max_pixels):
+    image.seek(0)
+    try:
+        with Image.open(image) as source_image:
+            camera_settings = extract_camera_settings(source_image)
+            width, height = source_image.size
+            requires_optimization = (
+                image.size > max_bytes or width * height > max_pixels
+            )
+            if not requires_optimization:
+                return image, camera_settings, False
+
+            source_image.load()
+            working_image = _flatten_for_jpeg(
+                ImageOps.exif_transpose(source_image)
+            )
+    finally:
+        image.seek(0)
+
+    pixel_count = working_image.width * working_image.height
+    if pixel_count > max_pixels:
+        scale = math.sqrt(max_pixels / pixel_count)
+        dimensions = (
+            max(1, int(working_image.width * scale)),
+            max(1, int(working_image.height * scale)),
+        )
+        working_image = working_image.resize(dimensions, Image.Resampling.LANCZOS)
+
+    margin = min(64 * 1024, max_bytes // 20)
+    target_bytes = max_bytes - margin
+    while True:
+        encoded_image = None
+        for quality in JPEG_UPLOAD_QUALITIES:
+            encoded_image = _encode_jpeg(working_image, quality)
+            if len(encoded_image) <= target_bytes:
+                base_name = os.path.splitext(os.path.basename(image.name))[0]
+                optimized_upload = SimpleUploadedFile(
+                    f"{base_name or 'photo'}.jpg",
+                    encoded_image,
+                    content_type="image/jpeg",
+                )
+                return optimized_upload, camera_settings, True
+
+        scale = min(
+            0.9,
+            math.sqrt(target_bytes / len(encoded_image)) * 0.95,
+        )
+        dimensions = (
+            max(1, int(working_image.width * scale)),
+            max(1, int(working_image.height * scale)),
+        )
+        if dimensions == working_image.size:
+            raise forms.ValidationError(
+                "This image could not be optimized for storage."
+            )
+        working_image = working_image.resize(dimensions, Image.Resampling.LANCZOS)
 
 
 class MultipleFileInput(forms.ClearableFileInput):
