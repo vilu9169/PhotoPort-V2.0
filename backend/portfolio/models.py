@@ -330,7 +330,8 @@ class Photo(models.Model):
             try:
                 pil = Image.open(self.image)
                 for field, value in extract_camera_settings(pil).items():
-                    setattr(self, field, value)
+                    if value or not getattr(self, field):
+                        setattr(self, field, value)
             finally:
                 self.image.seek(0)
 

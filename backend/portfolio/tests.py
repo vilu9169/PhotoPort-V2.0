@@ -34,6 +34,26 @@ def image_upload(name="photo.jpg", image_format="JPEG", size=(32, 32), exif=None
     )
 
 
+def noisy_image_upload(name="large-photo.jpg", size=(1000, 800), exif=None):
+    output = io.BytesIO()
+    save_kwargs = {"quality": 100}
+    if exif:
+        image_exif = Image.Exif()
+        for tag, value in exif.items():
+            image_exif[tag] = value
+        save_kwargs["exif"] = image_exif
+    Image.effect_noise(size, 100).convert("RGB").save(
+        output,
+        format="JPEG",
+        **save_kwargs,
+    )
+    return SimpleUploadedFile(
+        name,
+        output.getvalue(),
+        content_type="image/jpeg",
+    )
+
+
 class PhotoSecurityTests(TestCase):
     def setUp(self):
         super().setUp()
@@ -284,6 +304,45 @@ class PhotoSecurityTests(TestCase):
         self.assertEqual(Photo.objects.get().title, "Working")
         self.assertContains(response, "Could not upload 1 file: broken.jpg.")
         schedule_derivatives.assert_called_once()
+
+    @override_settings(
+        USE_CLOUDINARY=True,
+        CLOUDINARY_MAX_IMAGE_BYTES=120 * 1024,
+        CLOUDINARY_MAX_IMAGE_PIXELS=400_000,
+    )
+    @patch("portfolio.views.schedule_photo_derivative_generation")
+    def test_cloudinary_bulk_upload_optimizes_oversized_image(
+        self,
+        schedule_derivatives,
+    ):
+        self.login_staff()
+        upload = noisy_image_upload(
+            exif={
+                33434: (1, 320),
+                33437: (28, 10),
+                34855: 640,
+            }
+        )
+        self.assertGreater(upload.size, 120 * 1024)
+
+        response = self.client.post(
+            reverse("upload_photo"),
+            data={"description": "Optimized", "images": [upload]},
+            secure=True,
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        photo = Photo.objects.get()
+        self.assertLessEqual(photo.image.size, 120 * 1024)
+        photo.image.open()
+        with Image.open(photo.image) as stored_image:
+            self.assertLessEqual(stored_image.width * stored_image.height, 400_000)
+        self.assertEqual(photo.aperture, "f/2.8")
+        self.assertEqual(photo.iso, "640")
+        self.assertEqual(photo.shutter_speed, "1/320")
+        self.assertContains(response, "Optimized 1 oversized photo for Cloudinary.")
+        schedule_derivatives.assert_called_once_with([photo.pk])
 
     def test_staff_can_remove_photo_from_folder(self):
         label = Label.objects.create(title="Japan", slug="japan", order=4)
