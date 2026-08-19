@@ -352,7 +352,8 @@ class PhotoSecurityTests(TestCase):
         self.assertFalse(Photo.objects.filter(label=label).exists())
         self.assertEqual(Photo.objects.filter(label__isnull=True).count(), 2)
 
-    def test_staff_can_bulk_delete_only_selected_photos(self):
+    @patch("portfolio.views.schedule_storage_file_deletion")
+    def test_staff_can_bulk_delete_only_selected_photos(self, schedule_cleanup):
         label = Label.objects.create(title="Inbox", slug="inbox")
         photos = Photo.objects.bulk_create(
             [
@@ -381,16 +382,45 @@ class PhotoSecurityTests(TestCase):
         )
         self.login_staff()
 
-        response = self.client.post(
-            reverse("bulk_photos"),
-            data={
-                "photo_ids": [photos[0].id, photos[2].id],
-                "action": "delete",
-            },
-            secure=True,
-        )
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                reverse("bulk_photos"),
+                data={
+                    "photo_ids": [photos[0].id, photos[2].id],
+                    "action": "delete",
+                },
+                secure=True,
+            )
 
         photos[1].refresh_from_db()
         self.assertEqual(response.status_code, 302)
         self.assertEqual(Photo.objects.count(), 1)
         self.assertEqual(photos[1].order, 1)
+        schedule_cleanup.assert_called_once()
+        self.assertCountEqual(
+            schedule_cleanup.call_args.args[0],
+            ["photos/one.jpg", "photos/three.jpg"],
+        )
+
+    def test_storage_failure_does_not_block_photo_delete(self):
+        photo = Photo.objects.bulk_create(
+            [
+                Photo(
+                    title="Unavailable file",
+                    description="",
+                    image="photos/unavailable.jpg",
+                )
+            ]
+        )[0]
+        photo_id = photo.id
+
+        with (
+            patch(
+                "portfolio.models.default_storage.delete",
+                side_effect=OSError("storage unavailable"),
+            ),
+            self.assertLogs("portfolio.models", level="ERROR"),
+        ):
+            photo.delete()
+
+        self.assertFalse(Photo.objects.filter(id=photo_id).exists())
