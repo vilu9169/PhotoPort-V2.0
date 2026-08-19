@@ -1,3 +1,4 @@
+import logging
 import os
 
 from django.shortcuts import render, redirect, get_object_or_404
@@ -9,7 +10,12 @@ from django.utils.text import slugify
 from django.utils.cache import patch_cache_control
 from django.views.decorators.http import require_POST
 
-from .models import Label, Photo, schedule_storage_file_deletion
+from .models import (
+    Label,
+    Photo,
+    schedule_photo_derivative_generation,
+    schedule_storage_file_deletion,
+)
 from .forms import BulkPhotoUploadForm, FolderCreateForm, PhotoEditForm
 
 from rest_framework.views import APIView
@@ -20,6 +26,9 @@ from rest_framework.permissions import AllowAny
 
 from .serializer import PhotoSerializer
 # ---------- Helpers ----------
+
+logger = logging.getLogger(__name__)
+
 
 class PhotoList(APIView):
     """
@@ -212,23 +221,57 @@ def upload_photo(request):
             description = form.cleaned_data["description"]
             images = form.cleaned_data["images"]
 
-            with transaction.atomic():
-                for image in images:
-                    Photo.objects.create(
-                        title=_photo_title_from_upload(image, title_prefix),
-                        description=description,
-                        label=label,
-                        image=image,
-                    )
+            uploaded_photo_ids = []
+            failed_names = []
+            for image in images:
+                photo = Photo(
+                    title=_photo_title_from_upload(image, title_prefix),
+                    description=description,
+                    label=label,
+                    image=image,
+                )
+                photo._defer_derivatives = True
+                try:
+                    photo.save()
+                except Exception:
+                    logger.exception("Unable to upload photo %s", image.name)
+                    failed_names.append(image.name)
+                    if (
+                        photo.image
+                        and photo.image.name
+                        and getattr(photo.image, "_committed", False)
+                    ):
+                        schedule_storage_file_deletion([photo.image.name])
+                else:
+                    uploaded_photo_ids.append(photo.pk)
 
-            _normalize_order(label)
-            messages.success(
-                request,
-                f"Uploaded {len(images)} photo{'s' if len(images) != 1 else ''}.",
+            if uploaded_photo_ids:
+                _normalize_order(label)
+                schedule_photo_derivative_generation(uploaded_photo_ids)
+                uploaded_count = len(uploaded_photo_ids)
+                messages.success(
+                    request,
+                    f"Uploaded {uploaded_count} "
+                    f"photo{'s' if uploaded_count != 1 else ''}. "
+                    "Optimized previews are processing.",
+                )
+                if failed_names:
+                    failed_summary = ", ".join(failed_names[:3])
+                    if len(failed_names) > 3:
+                        failed_summary += f" and {len(failed_names) - 3} more"
+                    messages.warning(
+                        request,
+                        f"Could not upload {len(failed_names)} file"
+                        f"{'s' if len(failed_names) != 1 else ''}: {failed_summary}.",
+                    )
+                if label:
+                    return redirect("label_detail", slug=label.slug)
+                return redirect("photo_list")
+
+            form.add_error(
+                "images",
+                "No photos were uploaded. Try a smaller batch and check the server log.",
             )
-            if label:
-                return redirect("label_detail", slug=label.slug)
-            return redirect("photo_list")
     else:
         form = BulkPhotoUploadForm()
     return render(request, "photos/upload_photo.html", {"form": form})
