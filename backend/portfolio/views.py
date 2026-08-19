@@ -9,7 +9,7 @@ from django.utils.text import slugify
 from django.utils.cache import patch_cache_control
 from django.views.decorators.http import require_POST
 
-from .models import Label, Photo
+from .models import Label, Photo, schedule_storage_file_deletion
 from .forms import BulkPhotoUploadForm, FolderCreateForm, PhotoEditForm
 
 from rest_framework.views import APIView
@@ -297,10 +297,24 @@ def bulk_photos(request):
 
     if action == "delete":
         affected_label_ids = {photo.label_id for photo in photos}
-        Photo.objects.filter(id__in=[photo.id for photo in photos]).delete()
-        for label_id in affected_label_ids:
-            label = Label.objects.filter(id=label_id).first() if label_id else None
-            _normalize_order(label)
+        storage_names = [
+            field.name
+            for photo in photos
+            for field in (photo.image, photo.thumb, photo.preview)
+            if field and field.name
+        ]
+
+        with transaction.atomic():
+            for photo in photos:
+                photo._defer_storage_cleanup = True
+                photo.delete()
+            for label_id in affected_label_ids:
+                label = Label.objects.filter(id=label_id).first() if label_id else None
+                _normalize_order(label)
+            transaction.on_commit(
+                lambda names=tuple(storage_names): schedule_storage_file_deletion(names)
+            )
+
         messages.success(
             request,
             f"Deleted {photo_count} photo{'s' if photo_count != 1 else ''}.",

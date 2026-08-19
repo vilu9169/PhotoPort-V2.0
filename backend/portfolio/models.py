@@ -4,12 +4,19 @@ from django.utils import timezone
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
 from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
 
 # NEW: imports for derivative generation
-import io, os, base64
+import base64
+import io
+import logging
+import os
+import threading
 from fractions import Fraction
 from PIL import ExifTags, Image, ImageOps
 
+
+logger = logging.getLogger(__name__)
 
 THUMB_MAX_W = 800     # grid thumbnail
 THUMB_QUALITY = 70
@@ -379,12 +386,34 @@ class Photo(models.Model):
 
 @receiver(post_delete, sender=Photo)
 def delete_file_from_storage_on_delete(sender, instance, **kwargs):
-    """Remove the S3 objects when a Photo row is deleted."""
-    # original
-    if getattr(instance, "image", None):
-        instance.image.delete(save=False)
-    # NEW: derivatives
-    if getattr(instance, "thumb", None):
-        instance.thumb.delete(save=False)
-    if getattr(instance, "preview", None):
-        instance.preview.delete(save=False)
+    """Remove files from configured storage when a Photo row is deleted."""
+    if getattr(instance, "_defer_storage_cleanup", False):
+        return
+
+    delete_storage_files(
+        field.name
+        for field in (instance.image, instance.thumb, instance.preview)
+        if field and field.name
+    )
+
+
+def delete_storage_files(storage_names):
+    for storage_name in dict.fromkeys(storage_names):
+        try:
+            default_storage.delete(storage_name)
+        except Exception:
+            logger.exception("Unable to delete stored photo file %s", storage_name)
+
+
+def schedule_storage_file_deletion(storage_names):
+    names = tuple(dict.fromkeys(name for name in storage_names if name))
+    if not names:
+        return
+
+    cleanup_thread = threading.Thread(
+        target=delete_storage_files,
+        args=(names,),
+        name="photo-storage-cleanup",
+        daemon=True,
+    )
+    cleanup_thread.start()
