@@ -4,7 +4,7 @@ import os
 
 from django import forms
 from django.core.files.uploadedfile import SimpleUploadedFile
-from PIL import Image, ImageOps, UnidentifiedImageError
+from PIL import Image, UnidentifiedImageError
 
 from .models import Label, Photo, extract_camera_settings
 
@@ -77,6 +77,7 @@ def _encode_jpeg(pil_image, quality, exif_bytes=b""):
 
 def prepare_uploaded_image_for_storage(image, max_bytes, max_pixels):
     image.seek(0)
+    owned_image = None
     try:
         with Image.open(image) as source_image:
             camera_settings = extract_camera_settings(source_image)
@@ -91,67 +92,71 @@ def prepare_uploaded_image_for_storage(image, max_bytes, max_pixels):
             if not requires_optimization:
                 return image, camera_settings, False
 
-            transposed_image = ImageOps.exif_transpose(source_image)
-            working_image = _flatten_for_jpeg(transposed_image)
-            if working_image is not transposed_image:
-                transposed_image.close()
-    finally:
-        image.seek(0)
+            working_image = _flatten_for_jpeg(source_image)
+            if working_image is not source_image:
+                owned_image = working_image
 
-    try:
-        pixel_count = working_image.width * working_image.height
-        if pixel_count > max_pixels:
-            scale = math.sqrt(max_pixels / pixel_count)
-            dimensions = (
-                max(1, int(working_image.width * scale)),
-                max(1, int(working_image.height * scale)),
-            )
-            resized_image = working_image.resize(
-                dimensions,
-                Image.Resampling.LANCZOS,
-            )
-            working_image.close()
-            working_image = resized_image
-
-        margin = min(64 * 1024, max_bytes // 20)
-        target_bytes = max_bytes - margin
-        while True:
-            encoded_image = None
-            for quality in JPEG_UPLOAD_QUALITIES:
-                encoded_image = _encode_jpeg(
-                    working_image,
-                    quality,
-                    exif_bytes=exif_bytes,
+            pixel_count = working_image.width * working_image.height
+            if pixel_count > max_pixels:
+                scale = math.sqrt(max_pixels / pixel_count)
+                dimensions = (
+                    max(1, int(working_image.width * scale)),
+                    max(1, int(working_image.height * scale)),
                 )
-                if len(encoded_image) <= target_bytes:
-                    base_name = os.path.splitext(os.path.basename(image.name))[0]
-                    optimized_upload = SimpleUploadedFile(
-                        f"{base_name or 'photo'}.jpg",
-                        encoded_image,
-                        content_type="image/jpeg",
+                resized_image = working_image.resize(
+                    dimensions,
+                    Image.Resampling.LANCZOS,
+                )
+                if owned_image is not None:
+                    owned_image.close()
+                working_image = resized_image
+                owned_image = resized_image
+
+            margin = min(64 * 1024, max_bytes // 20)
+            target_bytes = max_bytes - margin
+            while True:
+                encoded_image = None
+                for quality in JPEG_UPLOAD_QUALITIES:
+                    encoded_image = _encode_jpeg(
+                        working_image,
+                        quality,
+                        exif_bytes=exif_bytes,
                     )
-                    return optimized_upload, camera_settings, True
+                    if len(encoded_image) <= target_bytes:
+                        base_name = os.path.splitext(
+                            os.path.basename(image.name)
+                        )[0]
+                        optimized_upload = SimpleUploadedFile(
+                            f"{base_name or 'photo'}.jpg",
+                            encoded_image,
+                            content_type="image/jpeg",
+                        )
+                        return optimized_upload, camera_settings, True
 
-            scale = min(
-                0.9,
-                math.sqrt(target_bytes / len(encoded_image)) * 0.95,
-            )
-            dimensions = (
-                max(1, int(working_image.width * scale)),
-                max(1, int(working_image.height * scale)),
-            )
-            if dimensions == working_image.size:
-                raise forms.ValidationError(
-                    "This image could not be optimized for storage."
+                scale = min(
+                    0.9,
+                    math.sqrt(target_bytes / len(encoded_image)) * 0.95,
                 )
-            resized_image = working_image.resize(
-                dimensions,
-                Image.Resampling.LANCZOS,
-            )
-            working_image.close()
-            working_image = resized_image
+                dimensions = (
+                    max(1, int(working_image.width * scale)),
+                    max(1, int(working_image.height * scale)),
+                )
+                if dimensions == working_image.size:
+                    raise forms.ValidationError(
+                        "This image could not be optimized for storage."
+                    )
+                resized_image = working_image.resize(
+                    dimensions,
+                    Image.Resampling.LANCZOS,
+                )
+                if owned_image is not None:
+                    owned_image.close()
+                working_image = resized_image
+                owned_image = resized_image
     finally:
-        working_image.close()
+        if owned_image is not None:
+            owned_image.close()
+        image.seek(0)
 
 
 class MultipleFileInput(forms.ClearableFileInput):

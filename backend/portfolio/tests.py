@@ -14,6 +14,7 @@ from .forms import MAX_UPLOAD_BYTES, BulkPhotoUploadForm, PhotoForm
 from .models import (
     Label,
     Photo,
+    cloudinary_variant_url,
     extract_camera_settings,
     generate_photo_derivatives,
 )
@@ -149,6 +150,53 @@ class PhotoSecurityTests(TestCase):
         self.assertEqual(item["aperture"], "f/2.8")
         self.assertEqual(item["iso"], "400")
         self.assertEqual(item["shutter_speed"], "1/250")
+
+    def test_cloudinary_variant_url_keeps_original_available(self):
+        original_url = (
+            "https://res.cloudinary.com/demo/image/upload/"
+            "v123/photos/stockholm.jpg"
+        )
+
+        self.assertEqual(
+            cloudinary_variant_url(original_url, 800),
+            "https://res.cloudinary.com/demo/image/upload/"
+            "a_auto,c_limit,f_auto,q_auto,w_800/"
+            "v123/photos/stockholm.jpg",
+        )
+        self.assertNotEqual(cloudinary_variant_url(original_url, 800), original_url)
+
+    @override_settings(USE_CLOUDINARY=True)
+    def test_cloudinary_photo_uses_remote_variants(self):
+        photo = Photo(image="photos/stockholm.jpg")
+        original_url = (
+            "https://res.cloudinary.com/demo/image/upload/"
+            "v123/photos/stockholm.jpg"
+        )
+
+        with patch.object(photo.image.storage, "url", return_value=original_url):
+            self.assertEqual(
+                photo.thumbnail_url,
+                cloudinary_variant_url(original_url, 800),
+            )
+            self.assertEqual(
+                photo.preview_url,
+                cloudinary_variant_url(original_url, 1600),
+            )
+            self.assertEqual(photo.image.url, original_url)
+
+    @override_settings(USE_CLOUDINARY=True)
+    @patch.object(Photo, "generate_derivatives")
+    def test_cloudinary_photo_save_skips_local_derivatives(self, generate):
+        photo = Photo.objects.create(
+            title="Cloudinary original",
+            description="",
+            image=image_upload(exif={34855: 200}),
+        )
+
+        generate.assert_not_called()
+        self.assertFalse(photo.thumb)
+        self.assertFalse(photo.preview)
+        self.assertEqual(photo.iso, "200")
 
     def test_photo_form_accepts_supported_image(self):
         form = PhotoForm(
@@ -390,7 +438,7 @@ class PhotoSecurityTests(TestCase):
         self.assertEqual(photo.iso, "640")
         self.assertEqual(photo.shutter_speed, "1/320")
         self.assertContains(response, "Optimized 1 oversized photo for Cloudinary.")
-        schedule_derivatives.assert_called_once_with([photo.pk])
+        schedule_derivatives.assert_not_called()
 
     def test_staff_can_remove_photo_from_folder(self):
         label = Label.objects.create(title="Japan", slug="japan", order=4)

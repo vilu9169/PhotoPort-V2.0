@@ -43,19 +43,24 @@ class PhotoSerializer(serializers.ModelSerializer):
         ]
 
     def _abs_url(self, file_field):
-        request = self.context.get("request")
         if not file_field:
             return None
         url = getattr(file_field, "url", None)
         if not url:
             return None
+        return self._abs_url_value(url)
+
+    def _abs_url_value(self, url):
+        if not url:
+            return None
+        request = self.context.get("request")
         return request.build_absolute_uri(url) if request else url
 
     def get_image_url(self, obj):
         return self._abs_url(obj.image)
 
     def get_thumbnail_url(self, obj):
-        return self._abs_url(obj.thumb)
+        return self._abs_url_value(obj.thumbnail_url)
 
     def get_preview_url(self, obj):
-        return self._abs_url(obj.preview)
+        return self._abs_url_value(obj.preview_url)

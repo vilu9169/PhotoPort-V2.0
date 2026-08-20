@@ -31,6 +31,9 @@ class PhotoAdmin(admin.ModelAdmin):
     list_select_related = ("label",)
     ordering = ("-order", "-id")
     def thumb(self, obj):
-        if obj.image:
-            return format_html('<img src="{}" style="height:60px;object-fit:cover;border-radius:6px;">', obj.image.url)
-        return "—"
+        if obj.thumbnail_url:
+            return format_html(
+                '<img src="{}" style="height:60px;object-fit:cover;border-radius:6px;">',
+                obj.thumbnail_url,
+            )
+        return "-"

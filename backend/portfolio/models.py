@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import close_old_connections, models
 from django.utils.text import slugify
 from django.utils import timezone
@@ -13,6 +14,7 @@ import logging
 import os
 import threading
 from fractions import Fraction
+from urllib.parse import urlsplit, urlunsplit
 from PIL import ExifTags, Image, ImageOps
 
 
@@ -24,6 +26,21 @@ PREVIEW_MAX_W = 1600  # detail view
 PREVIEW_QUALITY = 80
 BLUR_W = 24           # tiny LQIP width (data URL)
 DERIVATIVE_GENERATION_LOCK = threading.Lock()
+
+
+def cloudinary_variant_url(url, max_width):
+    """Build an on-demand Cloudinary delivery URL without touching the original."""
+    if not url:
+        return ""
+
+    marker = "/image/upload/"
+    parsed = urlsplit(url)
+    if marker not in parsed.path:
+        return url
+
+    transformation = f"a_auto,c_limit,f_auto,q_auto,w_{int(max_width)}"
+    path = parsed.path.replace(marker, f"{marker}{transformation}/", 1)
+    return urlunsplit(parsed._replace(path=path))
 
 
 def _exif_sources(exif):
@@ -244,6 +261,37 @@ class Photo(models.Model):
     def __str__(self):
         return self.title
 
+    @staticmethod
+    def _field_url(file_field):
+        if not file_field:
+            return ""
+        try:
+            return file_field.url
+        except (AttributeError, ValueError):
+            return ""
+
+    @property
+    def thumbnail_url(self):
+        stored_url = self._field_url(self.thumb)
+        if stored_url:
+            return stored_url
+
+        original_url = self._field_url(self.image)
+        if settings.USE_CLOUDINARY:
+            return cloudinary_variant_url(original_url, THUMB_MAX_W)
+        return original_url
+
+    @property
+    def preview_url(self):
+        stored_url = self._field_url(self.preview)
+        if stored_url:
+            return stored_url
+
+        original_url = self._field_url(self.image)
+        if settings.USE_CLOUDINARY:
+            return cloudinary_variant_url(original_url, PREVIEW_MAX_W)
+        return original_url
+
     # ---------- Derivative helpers ----------
     def _make_resized_jpeg(self, pil_img, max_w, quality):
         working_image = pil_img
@@ -304,7 +352,7 @@ class Photo(models.Model):
         Create thumbnail (~800w), preview (~1600w), and blur_data_url.
         Safe to call multiple times; controlled by 'force'.
         """
-        if not self.image:
+        if not self.image or settings.USE_CLOUDINARY:
             return
 
         with DERIVATIVE_GENERATION_LOCK:
@@ -377,7 +425,10 @@ class Photo(models.Model):
         - Generate derivatives immediately unless the caller explicitly defers them.
         """
         is_create = not self.pk
-        defer_derivatives = getattr(self, "_defer_derivatives", False)
+        defer_derivatives = (
+            getattr(self, "_defer_derivatives", False)
+            or settings.USE_CLOUDINARY
+        )
         previous_files = None
         image_changed = False
 
@@ -417,10 +468,10 @@ class Photo(models.Model):
         if defer_derivatives and self.image and (is_create or image_changed):
             self.image.open()
             try:
-                pil = Image.open(self.image)
-                for field, value in extract_camera_settings(pil).items():
-                    if value or not getattr(self, field):
-                        setattr(self, field, value)
+                with Image.open(self.image) as pil:
+                    for field, value in extract_camera_settings(pil).items():
+                        if value or not getattr(self, field):
+                            setattr(self, field, value)
             finally:
                 self.image.seek(0)
 

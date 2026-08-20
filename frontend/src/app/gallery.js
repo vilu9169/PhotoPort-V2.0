@@ -27,7 +27,7 @@ export const getThumbSrc = (item) =>
   buildUrl(item?.thumbnail_url || item?.image_url || item?.image);
 
 export const getDetailSrc = (item) =>
-  buildUrl(item?.preview_url || item?.image_url || item?.image);
+  buildUrl(item?.image_url || item?.image || item?.preview_url);
 
 export const getSrc = (item) => buildUrl(item?.image_url || item?.image);
 
