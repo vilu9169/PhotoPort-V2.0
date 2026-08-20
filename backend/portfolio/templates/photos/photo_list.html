@@ -109,10 +109,8 @@
               </label>
 
               <a class="photo-card__image" href="{% url 'edit_photo' photo.id %}" aria-label="Edit {{ photo.title }}">
-                {% if photo.thumb %}
-                  <img src="{{ photo.thumb.url }}" alt="{{ photo.title }}" loading="lazy">
-                {% elif photo.image %}
-                  <img src="{{ photo.image.url }}" alt="{{ photo.title }}" loading="lazy">
+                {% if photo.thumbnail_url %}
+                  <img src="{{ photo.thumbnail_url }}" alt="{{ photo.title }}" loading="lazy">
                 {% endif %}
               </a>
 
