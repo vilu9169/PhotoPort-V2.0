@@ -273,6 +273,7 @@ class PhotoSecurityTests(TestCase):
             title="Deferred",
             description="",
             image=image_upload(
+                size=(2400, 1600),
                 exif={
                     33434: (1, 200),
                     33437: (28, 10),
@@ -295,6 +296,21 @@ class PhotoSecurityTests(TestCase):
         self.assertTrue(photo.blur_data_url.startswith("data:image/jpeg;base64,"))
         self.assertEqual(photo.aperture, "f/2.8")
         self.assertEqual(photo.shutter_speed, "1/200")
+
+        photo.image.open()
+        with Image.open(photo.image) as original_image:
+            self.assertEqual(original_image.size, (2400, 1600))
+        photo.image.close()
+
+        photo.preview.open()
+        with Image.open(photo.preview) as preview_image:
+            self.assertLessEqual(max(preview_image.size), 1600)
+        photo.preview.close()
+
+        photo.thumb.open()
+        with Image.open(photo.thumb) as thumbnail_image:
+            self.assertLessEqual(max(thumbnail_image.size), 800)
+        photo.thumb.close()
 
     @patch("portfolio.views.schedule_photo_derivative_generation")
     def test_bulk_upload_continues_after_one_file_fails(

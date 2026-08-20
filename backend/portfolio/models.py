@@ -23,6 +23,7 @@ THUMB_QUALITY = 70
 PREVIEW_MAX_W = 1600  # detail view
 PREVIEW_QUALITY = 80
 BLUR_W = 24           # tiny LQIP width (data URL)
+DERIVATIVE_GENERATION_LOCK = threading.Lock()
 
 
 def _exif_sources(exif):
@@ -245,28 +246,58 @@ class Photo(models.Model):
 
     # ---------- Derivative helpers ----------
     def _make_resized_jpeg(self, pil_img, max_w, quality):
-        # convert to RGB and resize to max width (maintain aspect)
-        if pil_img.mode not in ("RGB", "L"):
-            pil_img = pil_img.convert("RGB")
-        w, h = pil_img.size
-        if w > max_w:
-            new_h = int(h * (max_w / float(w)))
-            pil_img = pil_img.resize((max_w, new_h), Image.LANCZOS)
-        buf = io.BytesIO()
-        pil_img.save(buf, format="JPEG", quality=quality, optimize=True, progressive=True)
-        return buf.getvalue()
+        working_image = pil_img
+        owned_images = []
+        try:
+            if working_image.mode not in ("RGB", "L"):
+                working_image = working_image.convert("RGB")
+                owned_images.append(working_image)
+            width, height = working_image.size
+            if width > max_w:
+                resized_image = working_image.resize(
+                    (max_w, max(1, int(height * (max_w / float(width))))),
+                    Image.Resampling.LANCZOS,
+                )
+                owned_images.append(resized_image)
+                working_image = resized_image
+            with io.BytesIO() as buffer:
+                working_image.save(
+                    buffer,
+                    format="JPEG",
+                    quality=quality,
+                    optimize=True,
+                    progressive=True,
+                )
+                return buffer.getvalue()
+        finally:
+            for owned_image in owned_images:
+                owned_image.close()
 
     def _build_blur_data_url(self, pil_img, tiny_w=BLUR_W):
-        img = pil_img
-        if img.mode not in ("RGB", "L"):
-            img = img.convert("RGB")
-        w, h = img.size
-        new_h = max(1, int(h * (tiny_w / float(w)))) if w else 1
-        tiny = img.resize((tiny_w, new_h), Image.LANCZOS)
-        buf = io.BytesIO()
-        tiny.save(buf, format="JPEG", quality=25, optimize=True)
-        b64 = base64.b64encode(buf.getvalue()).decode("ascii")
-        return f"data:image/jpeg;base64,{b64}"
+        working_image = pil_img
+        converted_image = None
+        tiny_image = None
+        try:
+            if working_image.mode not in ("RGB", "L"):
+                converted_image = working_image.convert("RGB")
+                working_image = converted_image
+            width, height = working_image.size
+            new_height = (
+                max(1, int(height * (tiny_w / float(width)))) if width else 1
+            )
+            tiny_image = working_image.resize(
+                (tiny_w, new_height),
+                Image.Resampling.LANCZOS,
+            )
+            with io.BytesIO() as buffer:
+                tiny_image.save(buffer, format="JPEG", quality=25, optimize=True)
+                encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+                return f"data:image/jpeg;base64,{encoded}"
+        finally:
+            if tiny_image is not None:
+                tiny_image.close()
+            if converted_image is not None:
+                converted_image.close()
 
     def generate_derivatives(self, force=False):
         """
@@ -276,42 +307,68 @@ class Photo(models.Model):
         if not self.image:
             return
 
-        # Ensure file is readable from storage (S3, etc.)
-        self.image.open()
-        img = Image.open(self.image)
-        img.load()
-        display_img = ImageOps.exif_transpose(img.copy())
+        with DERIVATIVE_GENERATION_LOCK:
+            self.image.open()
+            try:
+                with Image.open(self.image) as source_image:
+                    camera_settings = extract_camera_settings(source_image)
 
-        # thumbnail
-        if force or not self.thumb:
-            thumb_bytes = self._make_resized_jpeg(
-                display_img.copy(), THUMB_MAX_W, THUMB_QUALITY
-            )
-            base_name = os.path.basename(self.image.name)
-            self.thumb.save(
-                os.path.basename(photo_thumb_upload_to(self, base_name)),
-                ContentFile(thumb_bytes),
-                save=False,
-            )
-        # preview
-        if force or not self.preview:
-            preview_bytes = self._make_resized_jpeg(
-                display_img.copy(), PREVIEW_MAX_W, PREVIEW_QUALITY
-            )
-            base_name = os.path.basename(self.image.name)
-            self.preview.save(
-                os.path.basename(photo_preview_upload_to(self, base_name)),
-                ContentFile(preview_bytes),
-                save=False,
-            )
+                    # JPEG draft decoding avoids allocating the full-resolution
+                    # raster when only 1600px derivatives are needed.
+                    source_image.draft(
+                        "RGB",
+                        (PREVIEW_MAX_W, PREVIEW_MAX_W),
+                    )
+                    source_image.thumbnail(
+                        (PREVIEW_MAX_W, PREVIEW_MAX_W),
+                        Image.Resampling.LANCZOS,
+                    )
+                    display_image = ImageOps.exif_transpose(source_image)
+                    try:
+                        display_image.load()
+                        base_name = os.path.basename(self.image.name)
 
-        # blur data url (tiny)
-        if force or not self.blur_data_url:
-            self.blur_data_url = self._build_blur_data_url(display_img.copy())
+                        if force or not self.thumb:
+                            thumb_bytes = self._make_resized_jpeg(
+                                display_image,
+                                THUMB_MAX_W,
+                                THUMB_QUALITY,
+                            )
+                            self.thumb.save(
+                                os.path.basename(
+                                    photo_thumb_upload_to(self, base_name)
+                                ),
+                                ContentFile(thumb_bytes),
+                                save=False,
+                            )
 
-        for field, value in extract_camera_settings(img).items():
-            if force or not getattr(self, field):
-                setattr(self, field, value)
+                        if force or not self.preview:
+                            preview_bytes = self._make_resized_jpeg(
+                                display_image,
+                                PREVIEW_MAX_W,
+                                PREVIEW_QUALITY,
+                            )
+                            self.preview.save(
+                                os.path.basename(
+                                    photo_preview_upload_to(self, base_name)
+                                ),
+                                ContentFile(preview_bytes),
+                                save=False,
+                            )
+
+                        if force or not self.blur_data_url:
+                            self.blur_data_url = self._build_blur_data_url(
+                                display_image
+                            )
+                    finally:
+                        if display_image is not source_image:
+                            display_image.close()
+
+                    for field, value in camera_settings.items():
+                        if force or not getattr(self, field):
+                            setattr(self, field, value)
+            finally:
+                self.image.close()
 
     def save(self, *args, **kwargs):
         """
@@ -384,59 +441,19 @@ class Photo(models.Model):
                 ):
                     file_field.delete(save=False)
 
-        # If the original exists, generate derivatives
+        # If the original exists, generate derivatives.
         if self.image and not defer_derivatives:
-            self.image.open()
-            pil = Image.open(self.image)
-            pil.load()
-            display_pil = ImageOps.exif_transpose(pil.copy())
-            derivative_update_fields = []
-            should_update_exif = (
-                is_create
-                or image_changed
-                or not (self.aperture and self.iso and self.shutter_speed)
+            self.generate_derivatives()
+            super().save(
+                update_fields=[
+                    "thumb",
+                    "preview",
+                    "blur_data_url",
+                    "aperture",
+                    "iso",
+                    "shutter_speed",
+                ]
             )
-
-            if should_update_exif:
-                for field, value in extract_camera_settings(pil).items():
-                    if getattr(self, field) != value:
-                        setattr(self, field, value)
-                        derivative_update_fields.append(field)
-
-            # thumb
-            if not self.thumb:
-                tb = self._make_resized_jpeg(
-                    display_pil.copy(), THUMB_MAX_W, THUMB_QUALITY
-                )
-                name = os.path.basename(self.image.name)
-                self.thumb.save(
-                    os.path.basename(photo_thumb_upload_to(self, name)),
-                    ContentFile(tb),
-                    save=False,
-                )
-                derivative_update_fields.append("thumb")
-
-            # preview
-            if not self.preview:
-                pv = self._make_resized_jpeg(
-                    display_pil.copy(), PREVIEW_MAX_W, PREVIEW_QUALITY
-                )
-                name = os.path.basename(self.image.name)
-                self.preview.save(
-                    os.path.basename(photo_preview_upload_to(self, name)),
-                    ContentFile(pv),
-                    save=False,
-                )
-                derivative_update_fields.append("preview")
-
-            # blur
-            if not self.blur_data_url:
-                self.blur_data_url = self._build_blur_data_url(display_pil.copy())
-                derivative_update_fields.append("blur_data_url")
-
-            # persist only the derivative fields to avoid re-triggering logic
-            if derivative_update_fields:
-                super().save(update_fields=sorted(set(derivative_update_fields)))
 
 
 def generate_photo_derivatives(photo_ids):
