@@ -52,15 +52,17 @@ def _flatten_for_jpeg(pil_image):
     return background
 
 
-def _encode_jpeg(pil_image, quality):
+def _encode_jpeg(pil_image, quality, exif_bytes=b""):
     output = io.BytesIO()
-    pil_image.save(
-        output,
-        format="JPEG",
-        quality=quality,
-        optimize=True,
-        progressive=True,
-    )
+    save_options = {
+        "format": "JPEG",
+        "quality": quality,
+        "optimize": True,
+        "progressive": True,
+    }
+    if exif_bytes:
+        save_options["exif"] = exif_bytes
+    pil_image.save(output, **save_options)
     return output.getvalue()
 
 
@@ -69,6 +71,10 @@ def prepare_uploaded_image_for_storage(image, max_bytes, max_pixels):
     try:
         with Image.open(image) as source_image:
             camera_settings = extract_camera_settings(source_image)
+            try:
+                exif_bytes = source_image.getexif().tobytes()
+            except (AttributeError, OSError, TypeError, ValueError):
+                exif_bytes = b""
             width, height = source_image.size
             requires_optimization = (
                 image.size > max_bytes or width * height > max_pixels
@@ -97,7 +103,11 @@ def prepare_uploaded_image_for_storage(image, max_bytes, max_pixels):
     while True:
         encoded_image = None
         for quality in JPEG_UPLOAD_QUALITIES:
-            encoded_image = _encode_jpeg(working_image, quality)
+            encoded_image = _encode_jpeg(
+                working_image,
+                quality,
+                exif_bytes=exif_bytes,
+            )
             if len(encoded_image) <= target_bytes:
                 base_name = os.path.splitext(os.path.basename(image.name))[0]
                 optimized_upload = SimpleUploadedFile(

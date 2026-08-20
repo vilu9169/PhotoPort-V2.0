@@ -8,10 +8,15 @@ from django.db import OperationalError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.urls import reverse
-from PIL import Image
+from PIL import ExifTags, Image
 
 from .forms import MAX_UPLOAD_BYTES, BulkPhotoUploadForm, PhotoForm
-from .models import Label, Photo, generate_photo_derivatives
+from .models import (
+    Label,
+    Photo,
+    extract_camera_settings,
+    generate_photo_derivatives,
+)
 
 
 def image_upload(name="photo.jpg", image_format="JPEG", size=(32, 32), exif=None):
@@ -19,8 +24,9 @@ def image_upload(name="photo.jpg", image_format="JPEG", size=(32, 32), exif=None
     save_kwargs = {}
     if exif:
         image_exif = Image.Exif()
+        camera_ifd = image_exif.get_ifd(ExifTags.IFD.Exif)
         for tag, value in exif.items():
-            image_exif[tag] = value
+            camera_ifd[tag] = value
         save_kwargs["exif"] = image_exif
     Image.new("RGB", size, color="white").save(
         output,
@@ -39,8 +45,9 @@ def noisy_image_upload(name="large-photo.jpg", size=(1000, 800), exif=None):
     save_kwargs = {"quality": 100}
     if exif:
         image_exif = Image.Exif()
+        camera_ifd = image_exif.get_ifd(ExifTags.IFD.Exif)
         for tag, value in exif.items():
-            image_exif[tag] = value
+            camera_ifd[tag] = value
         save_kwargs["exif"] = image_exif
     Image.effect_noise(size, 100).convert("RGB").save(
         output,
@@ -192,6 +199,23 @@ class PhotoSecurityTests(TestCase):
         self.assertEqual(photo.iso, "400")
         self.assertEqual(photo.shutter_speed, "1/250")
 
+    def test_photo_save_extracts_modern_camera_setting_fallbacks(self):
+        photo = Photo.objects.create(
+            title="Modern EXIF",
+            description="",
+            image=image_upload(
+                exif={
+                    37377: (8, 1),  # ShutterSpeedValue
+                    37378: (3, 1),  # ApertureValue
+                    34867: 125,  # ISOSpeed
+                }
+            ),
+        )
+
+        self.assertEqual(photo.aperture, "f/2.8")
+        self.assertEqual(photo.iso, "125")
+        self.assertEqual(photo.shutter_speed, "1/256")
+
     def test_bulk_photo_upload_form_accepts_multiple_images(self):
         form = BulkPhotoUploadForm(
             data={"description": "Batch"},
@@ -338,6 +362,14 @@ class PhotoSecurityTests(TestCase):
         photo.image.open()
         with Image.open(photo.image) as stored_image:
             self.assertLessEqual(stored_image.width * stored_image.height, 400_000)
+            self.assertEqual(
+                extract_camera_settings(stored_image),
+                {
+                    "aperture": "f/2.8",
+                    "iso": "640",
+                    "shutter_speed": "1/320",
+                },
+            )
         self.assertEqual(photo.aperture, "f/2.8")
         self.assertEqual(photo.iso, "640")
         self.assertEqual(photo.shutter_speed, "1/320")
