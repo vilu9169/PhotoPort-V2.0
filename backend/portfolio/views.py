@@ -252,6 +252,7 @@ def upload_photo(request):
                             original_name,
                         )
                         failed_names.append(original_name)
+                        image.close()
                         continue
 
                 photo = Photo(
@@ -277,15 +278,25 @@ def upload_photo(request):
                     uploaded_photo_ids.append(photo.pk)
                     optimized_count += int(was_optimized)
 
+                if stored_image is not image:
+                    stored_image.close()
+                image.close()
+
             if uploaded_photo_ids:
                 _normalize_order(label)
-                schedule_photo_derivative_generation(uploaded_photo_ids)
+                if not settings.USE_CLOUDINARY:
+                    schedule_photo_derivative_generation(uploaded_photo_ids)
                 uploaded_count = len(uploaded_photo_ids)
+                processing_message = (
+                    ""
+                    if settings.USE_CLOUDINARY
+                    else " Optimized previews are processing."
+                )
                 messages.success(
                     request,
                     f"Uploaded {uploaded_count} "
-                    f"photo{'s' if uploaded_count != 1 else ''}. "
-                    "Optimized previews are processing.",
+                    f"photo{'s' if uploaded_count != 1 else ''}."
+                    f"{processing_message}",
                 )
                 if optimized_count:
                     messages.info(

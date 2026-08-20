@@ -21,10 +21,8 @@
 
     <section class="edit-layout">
       <div class="edit-preview">
-        {% if photo.preview %}
-          <img src="{{ photo.preview.url }}" alt="{{ photo.title }}">
-        {% elif photo.image %}
-          <img src="{{ photo.image.url }}" alt="{{ photo.title }}">
+        {% if photo.preview_url %}
+          <img src="{{ photo.preview_url }}" alt="{{ photo.title }}">
         {% endif %}
       </div>
 
