@@ -25,10 +25,23 @@ PREVIEW_QUALITY = 80
 BLUR_W = 24           # tiny LQIP width (data URL)
 
 
-def _first_exif_value(exif, *tag_names):
-    for tag_id, value in exif.items():
-        if ExifTags.TAGS.get(tag_id) in tag_names and value not in (None, ""):
-            return value
+def _exif_sources(exif):
+    sources = []
+    try:
+        nested_exif = exif.get_ifd(ExifTags.IFD.Exif)
+    except (AttributeError, KeyError, TypeError, ValueError):
+        nested_exif = None
+    if nested_exif:
+        sources.append(nested_exif)
+    sources.append(exif)
+    return sources
+
+
+def _first_exif_value(exif_sources, *tag_names):
+    for exif in exif_sources:
+        for tag_id, value in exif.items():
+            if ExifTags.TAGS.get(tag_id) in tag_names and value not in (None, ""):
+                return value
     return None
 
 
@@ -55,6 +68,13 @@ def _format_aperture(value):
     if not numeric:
         return ""
     return f"f/{_format_decimal(numeric)}"
+
+
+def _format_aperture_value(value):
+    apex = _rational_to_float(value)
+    if apex is None:
+        return ""
+    return _format_aperture(2 ** (apex / 2))
 
 
 def _format_iso(value):
@@ -98,16 +118,28 @@ def extract_camera_settings(pil_img):
         if not exif:
             return {"aperture": "", "iso": "", "shutter_speed": ""}
 
-        exposure_time = _first_exif_value(exif, "ExposureTime")
-        shutter_speed_value = _first_exif_value(exif, "ShutterSpeedValue")
+        exif_sources = _exif_sources(exif)
+        exposure_time = _first_exif_value(exif_sources, "ExposureTime")
+        shutter_speed_value = _first_exif_value(
+            exif_sources,
+            "ShutterSpeedValue",
+        )
+        aperture = _format_aperture(
+            _first_exif_value(exif_sources, "FNumber")
+        ) or _format_aperture_value(
+            _first_exif_value(exif_sources, "ApertureValue")
+        )
 
         return {
-            "aperture": _format_aperture(_first_exif_value(exif, "FNumber")),
+            "aperture": aperture,
             "iso": _format_iso(
                 _first_exif_value(
-                    exif,
+                    exif_sources,
                     "ISOSpeedRatings",
                     "PhotographicSensitivity",
+                    "ISOSpeed",
+                    "StandardOutputSensitivity",
+                    "RecommendedExposureIndex",
                 )
             ),
             "shutter_speed": (
