@@ -15,15 +15,12 @@ const About = () => {
               Viktor Lundin
             </h1>
             <p className="text-lg sm:text-lg md:text-xl">
-              Student, Master in Computer and Information Engineering
+              M.Sc in Computer and Information Engineering
             </p>
-            <p className="text-lg sm:text-lg md:text-xl">Uppsala, Sweden</p>
+            <p className="text-lg sm:text-lg md:text-xl">Stockholm, Sweden</p>
   
             <p className="mt-6 text-base sm:text-lg leading-relaxed">
-              This project is a personal endeavor by Viktor Lundin, a master&apos;s
-              student in Computer and Information Engineering at Uppsala
-              University. It serves as a platform to showcase his skills and
-              interests in web development and software engineering.
+              Sometimes I photograph my cat, sometimes I photograph something else.
             </p>
           </div>
         </div>
