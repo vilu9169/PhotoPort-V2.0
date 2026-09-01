@@ -13,6 +13,10 @@ const pages = [
   { id: "contact", label: "Contact" },
 ];
 
+const constellationUrl =
+  process.env.NEXT_PUBLIC_CONSTELLATION_URL ||
+  "https://vilu9169.github.io/PhotoConstellation/";
+
 export default function Home() {
   const [page, setPage] = useState("gallery");
 
@@ -41,6 +45,15 @@ export default function Home() {
               {item.label}
             </button>
           ))}
+          <a
+            className="site-nav__external"
+            href={constellationUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Open Photo Constellation in a new tab"
+          >
+            Constellation <span aria-hidden="true">↗</span>
+          </a>
         </nav>
       </header>
 

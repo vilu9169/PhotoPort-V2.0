@@ -1,8 +1,6 @@
-
-# env files
-.env
-*.env
-backend/backend/.env
+# Local environment files. Examples document names only and are safe to track.
+.env*
+!**/.env.example
 
 # local databases and uploaded media
 *.sqlite3
@@ -11,6 +9,7 @@ backend/media/
 # Python build/runtime artifacts
 __pycache__/
 *.py[cod]
+.venv/
 .pytest_cache/
 
 # local tooling

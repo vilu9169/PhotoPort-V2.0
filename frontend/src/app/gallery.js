@@ -272,17 +272,15 @@ function PhotoViewer({ photo, photos, onClose, onChange }) {
 
 const Gallery = () => {
   const [images, setImages] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(Boolean(API_URL));
+  const [error, setError] = useState(
+    API_URL ? "" : "The photo service is not configured."
+  );
   const [activeCollection, setActiveCollection] = useState("all");
   const [selectedPhoto, setSelectedPhoto] = useState(null);
 
   useEffect(() => {
-    if (!API_URL) {
-      setError("The photo service is not configured.");
-      setLoading(false);
-      return;
-    }
+    if (!API_URL) return;
 
     fetch(`${API_URL}/api/photos/?limit=200`)
       .then(async (response) => {

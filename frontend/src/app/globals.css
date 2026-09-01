@@ -95,8 +95,12 @@ a:focus-visible {
   gap: clamp(20px, 3vw, 42px);
 }
 
-.site-nav button {
+.site-nav button,
+.site-nav__external {
   position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
   padding: 7px 0;
   color: var(--muted);
   font-size: 0.78rem;
@@ -105,7 +109,8 @@ a:focus-visible {
   transition: color 180ms ease;
 }
 
-.site-nav button::after {
+.site-nav button::after,
+.site-nav__external::after {
   position: absolute;
   right: 0;
   bottom: 0;
@@ -119,13 +124,24 @@ a:focus-visible {
 }
 
 .site-nav button:hover,
-.site-nav button.is-active {
+.site-nav button.is-active,
+.site-nav__external:hover {
   color: var(--foreground);
 }
 
-.site-nav button.is-active::after {
+.site-nav button.is-active::after,
+.site-nav__external:hover::after {
   transform: scaleX(1);
   transform-origin: left;
+}
+
+.site-nav__external span {
+  font-size: 0.85em;
+  transition: transform 180ms ease;
+}
+
+.site-nav__external:hover span {
+  transform: translate(2px, -2px);
 }
 
 .gallery-shell {
@@ -621,7 +637,8 @@ a:focus-visible {
     gap: 17px;
   }
 
-  .site-nav button {
+  .site-nav button,
+  .site-nav__external {
     font-size: 0.7rem;
   }
 
@@ -725,6 +742,15 @@ a:focus-visible {
     max-width: 85px;
     font-size: 0.72rem;
     line-height: 1.3;
+  }
+
+  .site-nav {
+    gap: 10px;
+  }
+
+  .site-nav button,
+  .site-nav__external {
+    font-size: 0.62rem;
   }
 
   .gallery-intro h1 {
